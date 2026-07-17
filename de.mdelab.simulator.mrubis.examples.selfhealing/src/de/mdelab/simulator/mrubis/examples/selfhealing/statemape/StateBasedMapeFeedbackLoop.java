@@ -1,122 +1,474 @@
 package de.mdelab.simulator.mrubis.examples.selfhealing.statemape;
 
+import java.io.IOException;
 import java.util.logging.Level;
 
-import de.mdelab.comparch.Annotations;
 import de.mdelab.comparch.Architecture;
 import de.mdelab.simulator.Scenario;
 import de.mdelab.simulator.Simulator;
 import de.mdelab.simulator.UtilityFunction;
+
 import de.mdelab.simulator.mrubis.examples.selfhealing.SelfHealingConfig;
 import de.mdelab.simulator.mrubis.examples.selfhealing.SelfHealingScenario;
 import de.mdelab.simulator.mrubis.utility.MRubisSelfHealingUtilityFunction;
 
+
 /**
- * A feedback loop for self-healing mRUBiS and especially the issues CF1, CF2,
- * CF3, and CF5.
- * 
- * The feedback loop is state-based, that is, it does not use any change events
- * to drive the self-adaptation process but it queries and searches the whole
- * model for issues.
- * 
- * The feedback loop is structured in four activities according to MAPE-K. The
- * knowledge is captured in the model and the activities communicate with each
- * other using {@link Annotations} in the model.
- * 
- * @author thomas vogel
- * @version 0.41
- * 
+ * Feedback loop MAPE-K instrumentado para experimentación.
+ *
+ * Permite comparar:
+ *
+ * STATIC
+ * UTILITY_DRIVEN
+ * SOLVER
+ *
+ * midiendo:
+ *
+ * - T_ajuste
+ * - T_estab
+ * - utilidad acumulada
+ *
+ * mediante System.nanoTime().
+ *
+ * Contribución técnica original –
+ * Wilson Israel Gonzalez Armijos
  */
 public class StateBasedMapeFeedbackLoop {
 
-	private int exceptionThreshold;
 
-	/**
-	 * Creates the self-healing feedback loop.
-	 * 
-	 * @param exceptionThreshold
-	 *            threshold for the numbers of exceptions that causes a CF2.
-	 */
-	public StateBasedMapeFeedbackLoop(int exceptionThreshold) {
-		this.exceptionThreshold = exceptionThreshold;
-	}
+    public enum PlanningStrategy {
+        STATIC,
+        UTILITY_DRIVEN,
+        SOLVER
+    }
 
-	/**
-	 * Runs the feedback loop.
-	 * 
-	 * @param architecture
-	 *            the root element of the model.
-	 */
-	public void run(Architecture architecture) {
-		// MONITOR
-		Monitor m = new Monitor();
-		if (m.monitor(architecture)) {
-			// ANALYZE
-			Analyze a = new Analyze();
-			a.analyze(architecture, this.exceptionThreshold);
-			// PLAN
-			Plan p = new Plan();
-			p.plan(architecture);
-			// EXECUTE
-			Execute e = new Execute();
-			e.execute(architecture);
-		}
-	}
 
-	/**
-	 * Main to run the simulator and feedback loop.
-	 * 
-	 * @param args
-	 *            <code>null</code>
-	 */
-	public static void main(String[] args) {
-		// load the model
-		String modelURI = "./model/mRUBiS.comparch";
-		Architecture architecture = SelfHealingConfig.loadModel(modelURI);
+    /**
+     * Cambiar para ejecutar cada estrategia.
+     */
+    private static final PlanningStrategy STRATEGY =
+            PlanningStrategy.STATIC;
 
-		// parameters for the self-healing case:
-		// - threshold for the number of exceptions that causes a CF2.
-		// - minimum number of filter components that should be part of a pipe.
-		int exceptionThreshold = 5;
-		int minPipeSize = 4;
 
-		// Instantiate the utility function and scenario
-		UtilityFunction utilityFunction = new MRubisSelfHealingUtilityFunction(exceptionThreshold);
-		Scenario scenario = new SelfHealingScenario(architecture, exceptionThreshold);
 
-		// parameters for the simulator
-		int rounds = 4;
-		long injectionDelayMS = 100;
-		boolean eventTrackingEnabled = false; // state-based loop; no events needed.
-		boolean logToConsole = true;
-		// get an instance of the simulator
-		Simulator simulator = Simulator.FACTORY.createSimulator(architecture, utilityFunction, scenario, rounds,
-				injectionDelayMS, eventTrackingEnabled, Level.CONFIG, logToConsole);
-		// add the validators for self-healing to the simulator
-		SelfHealingConfig.addValidators(simulator, exceptionThreshold, minPipeSize);
+    private static final double UMBRAL_AJUSTE = 0.6;
 
-		// instantiate the feedback loop
-		StateBasedMapeFeedbackLoop loop = new StateBasedMapeFeedbackLoop(exceptionThreshold);
+    private static final double UMBRAL_ESTAB = 0.85;
 
-		// run the simulation
-		do {
-			// trigger the simulator to inject issues
-			simulator.injectIssues();
+    private static final int CICLOS_ESTABLES = 3;
 
-			// run feedback loop and repair the issues
-			loop.run(architecture);
 
-			// trigger the simulator to validate the model
-			simulator.validateModel();
 
-			// snapshot the model
-			// simulator.snapshotModel();
+    private final int exceptionThreshold;
 
-			// repeat until the simulation is completed
-		} while (!simulator.isSimulationCompleted());
 
-		// create and show final results (see folder "results" of the project)
-		simulator.showResults();
-	}
+    private long t_falla = -1;
+
+    private long t_ajuste = -1;
+
+    private long t_estab = -1;
+
+
+
+    private boolean ajusteRegistrado = false;
+
+    private boolean estabRegistrada = false;
+
+
+    private int ciclosEstables = 0;
+
+
+    private double utilidadFinal = 0.0;
+
+
+
+    private final MRubisSelfHealingUtilityFunction utilityFunction;
+
+
+
+    public StateBasedMapeFeedbackLoop(int exceptionThreshold) {
+
+        this.exceptionThreshold = exceptionThreshold;
+
+        this.utilityFunction =
+                new MRubisSelfHealingUtilityFunction(
+                        exceptionThreshold);
+    }
+
+
+
+    /**
+     * Ejecuta un ciclo completo MAPE-K.
+     */
+    public void run(Architecture architecture) {
+
+
+        Monitor monitor = new Monitor();
+
+
+        if (monitor.monitor(architecture)) {
+
+
+            Analyze analyze = new Analyze();
+
+            analyze.analyze(
+                    architecture,
+                    exceptionThreshold);
+
+
+
+            long inicioPlan =
+                    System.nanoTime();
+
+
+            runPlanner(architecture);
+
+
+            long finPlan =
+                    System.nanoTime();
+
+
+            Execute execute = new Execute();
+
+            execute.execute(architecture);
+
+
+        }
+
+
+
+        long tiempoActual =
+                System.nanoTime();
+
+
+
+        double utilidad =
+                utilityFunction.computeUtility(
+                        architecture);
+
+
+
+        utilidadFinal = utilidad;
+
+
+
+        registrarTAjuste(
+                tiempoActual,
+                utilidad);
+
+
+
+        registrarTEstablecimiento(
+                tiempoActual,
+                utilidad);
+
+    }
+
+
+
+    private void registrarTAjuste(
+            long tiempoActual,
+            double utilidad) {
+
+
+        if(!ajusteRegistrado
+                && utilidad >= UMBRAL_AJUSTE
+                && t_falla > 0) {
+
+
+            t_ajuste = tiempoActual;
+
+            ajusteRegistrado = true;
+        }
+    }
+
+
+
+    private void registrarTEstablecimiento(
+            long tiempoActual,
+            double utilidad) {
+
+
+
+        if(estabRegistrada || t_falla <= 0)
+            return;
+
+
+
+        if(utilidad >= UMBRAL_ESTAB){
+
+            ciclosEstables++;
+
+
+            if(ciclosEstables >= CICLOS_ESTABLES){
+
+                t_estab = tiempoActual;
+
+                estabRegistrada = true;
+            }
+
+        }else{
+
+            ciclosEstables = 0;
+        }
+
+    }
+
+
+
+
+    private void runPlanner(
+            Architecture architecture) {
+
+
+        switch(STRATEGY){
+
+
+        case STATIC:
+
+            new Plan()
+                    .plan(architecture);
+
+            break;
+
+
+
+        case UTILITY_DRIVEN:
+
+            new UtilityDrivenPlan(
+                    exceptionThreshold)
+                    .plan(architecture);
+
+            break;
+
+
+
+        case SOLVER:
+
+            new SolverPlan()
+                    .plan(architecture);
+
+            break;
+        }
+
+    }
+
+
+
+    public void registrarFalla(){
+
+
+        t_falla =
+                System.nanoTime();
+
+
+        t_ajuste = -1;
+
+        t_estab = -1;
+
+
+        ajusteRegistrado = false;
+
+        estabRegistrada = false;
+
+
+        ciclosEstables = 0;
+
+
+        utilidadFinal = 0.0;
+
+    }
+
+
+
+
+    public long getTAjusteMs(){
+
+        if(t_ajuste < 0)
+            return -1;
+
+
+        return
+          (t_ajuste - t_falla)
+          /
+          1_000_000;
+
+    }
+
+
+
+
+    public long getTEstabMs(){
+
+        if(t_estab < 0)
+            return -1;
+
+
+        return
+          (t_estab - t_falla)
+          /
+          1_000_000;
+
+    }
+
+
+
+
+    public double getUtilidadFinal(){
+
+        return utilidadFinal;
+    }
+
+
+
+
+    public static void main(String[] args)
+            throws IOException {
+
+
+
+        String modelURI =
+                "./model/mRUBiS.comparch";
+
+
+        int exceptionThreshold = 5;
+
+
+        int minPipeSize = 4;
+
+
+        int rounds = 20;
+
+
+        int repeticiones = 30;
+
+
+        long injectionDelayMS = 100;
+
+
+
+        String nivelCF = "CF1";
+
+
+
+        String csvPath =
+                "./results/experimento_"
+                + STRATEGY.name()
+                + "_"
+                + nivelCF
+                + ".csv";
+
+
+
+        MetricsCollector metrics =
+                new MetricsCollector(csvPath);
+
+
+
+        for(int rep=1;
+            rep<=repeticiones;
+            rep++){
+
+
+
+            Architecture architecture =
+                    SelfHealingConfig
+                    .loadModel(modelURI);
+
+
+
+            UtilityFunction utilityFunction =
+                    new MRubisSelfHealingUtilityFunction(
+                            exceptionThreshold);
+
+
+
+            Scenario scenario =
+                    new SelfHealingScenario(
+                            architecture,
+                            exceptionThreshold);
+
+
+
+            Simulator simulator =
+                    Simulator.FACTORY.createSimulator(
+                            architecture,
+                            utilityFunction,
+                            scenario,
+                            rounds,
+                            injectionDelayMS,
+                            false,
+                            Level.WARNING,
+                            false);
+
+
+
+            SelfHealingConfig.addValidators(
+                    simulator,
+                    exceptionThreshold,
+                    minPipeSize);
+
+
+
+            StateBasedMapeFeedbackLoop loop =
+                    new StateBasedMapeFeedbackLoop(
+                            exceptionThreshold);
+
+
+
+            do{
+
+
+                simulator.injectIssues();
+
+
+                loop.registrarFalla();
+
+
+                loop.run(architecture);
+
+
+
+                simulator.validateModel();
+
+
+
+            }while(!simulator.isSimulationCompleted());
+
+
+
+
+            metrics.record(
+                    STRATEGY.name(),
+                    nivelCF,
+                    rep,
+                    loop.getTAjusteMs(),
+                    loop.getTEstabMs(),
+                    loop.getUtilidadFinal()
+            );
+
+
+
+            System.out.printf(
+                    "[Rep %d] Ajuste=%d ms Estab=%d ms Utilidad=%.4f%n",
+                    rep,
+                    loop.getTAjusteMs(),
+                    loop.getTEstabMs(),
+                    loop.getUtilidadFinal()
+            );
+
+        }
+
+
+
+        metrics.close();
+
+
+
+        System.out.println(
+                "CSV generado: "
+                + csvPath);
+
+    }
 
 }
