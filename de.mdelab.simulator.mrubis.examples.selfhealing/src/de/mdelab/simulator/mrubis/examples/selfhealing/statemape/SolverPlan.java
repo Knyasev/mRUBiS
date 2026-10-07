@@ -21,216 +21,385 @@ import ilog.cplex.IloCplex;
 
 /**
  * Solver-based planning activity using ILOG CPLEX.
- * Formulates the repair selection as an Integer Linear Program (ILP):
- *   maximize  sum(utility_i * x_i)
- *   subject to sum(cost_i * x_i) <= budget
- *              x_i in {0, 1}
  *
- * Contribution técnica original – Wilson Israel Gonzalez Armjos, 2025
+ * Formulates the repair planning problem as a 0/1 Integer Linear Program
+ * (Knapsack problem):
+ *
+ * maximize (utility_i * x_i)
+ *
+ * subject to
+ *
+ * (cost_i * x_i) <= budget
+ *
+ * x_i  {0,1}
+ *
+ * Contribution:
+ * Wilson Israel Gonzalez Armijos
  */
 public class SolverPlan {
 
-    // Maximum computational budget (ms) the solver may consume per cycle.
-    // Acts as the ILP constraint — repairs with higher cost are deprioritized.
-    private static final double BUDGET_MS = 500.0;
+    /**
+     * Computational budget available for one planning cycle.
+     *
+     * A reduced value forces the solver to prioritize repairs instead
+     * of selecting every issue, allowing meaningful comparison with
+     * the Static and Utility-Driven planners.
+     */
+    private static final double BUDGET_MS = 40.0;
 
     /**
-     * Plans adaptations by solving an ILP that maximizes utility
-     * within a time budget constraint.
-     *
-     * @param architecture root element of the model
+     * Executes the planning stage.
      */
     public void plan(Architecture architecture) {
+
         Annotations annotations = architecture.getAnnotations();
-        List<Issue> issues = new ArrayList<>(annotations.getIssues());
+
+        List<Issue> issues =
+                new ArrayList<>(annotations.getIssues());
 
         if (issues.isEmpty()) {
             return;
         }
 
-        // Build utility and cost vectors
-        int     n        = issues.size();
+        int n = issues.size();
+
         double[] utility = new double[n];
-        double[] cost    = new double[n];
+        double[] cost = new double[n];
 
         for (int i = 0; i < n; i++) {
+
             utility[i] = getUtility(issues.get(i));
-            cost[i]    = getCost(issues.get(i));
+            cost[i] = getCost(issues.get(i));
+
         }
 
-        // Solve ILP with CPLEX
-        boolean[] selected = solveILP(n, utility, cost, BUDGET_MS);
+        boolean[] selected =
+                solveILP(
+                        n,
+                        utility,
+                        cost,
+                        BUDGET_MS);
 
-        // Create adaptation strategies for selected issues
         for (int i = 0; i < n; i++) {
-            if (selected[i]) {
-                AdaptationStrategy strategy = createStrategy(issues.get(i));
-                if (strategy != null) {
-                    issues.get(i).getAssignedAdaptationStrategies().add(strategy);
-                    annotations.getAdaptationStrategies().add(strategy);
-                }
+
+            if (!selected[i]) {
+                continue;
+            }
+
+            AdaptationStrategy strategy =
+                    createStrategy(issues.get(i));
+
+            if (strategy != null) {
+
+                issues.get(i)
+                        .getAssignedAdaptationStrategies()
+                        .add(strategy);
+
+                annotations
+                        .getAdaptationStrategies()
+                        .add(strategy);
             }
         }
+
     }
 
     /**
-     * Solves the 0/1 knapsack ILP using CPLEX.
-     * maximize  sum(utility[i] * x[i])
-     * subject to sum(cost[i] * x[i]) <= budget
-     *
-     * @return boolean array: selected[i]=true means issue i is selected
+     * Solves the 0/1 Knapsack problem using CPLEX.
      */
-    private boolean[] solveILP(int n, double[] utility,
-                                double[] cost, double budget) {
-        boolean[] selected = new boolean[n];
+    private boolean[] solveILP(
+            int n,
+            double[] utility,
+            double[] cost,
+            double budget) {
+
+        boolean[] selected =
+                new boolean[n];
+
         try {
-            IloCplex cplex = new IloCplex();
-            cplex.setOut(null); // silence CPLEX output
 
-            // Decision variables: x[i] in {0,1}
-            IloIntVar[] x = cplex.boolVarArray(n);
+            IloCplex cplex =
+                    new IloCplex();
 
-            // Objective: maximize sum(utility[i] * x[i])
-            IloLinearNumExpr objective = cplex.linearNumExpr();
+            cplex.setOut(null);
+
+            IloIntVar[] x =
+                    cplex.boolVarArray(n);
+
+            IloLinearNumExpr objective =
+                    cplex.linearNumExpr();
+
             for (int i = 0; i < n; i++) {
-                objective.addTerm(utility[i], x[i]);
+
+                objective.addTerm(
+                        utility[i],
+                        x[i]);
+
             }
+
             cplex.addMaximize(objective);
 
-            // Constraint: sum(cost[i] * x[i]) <= budget
-            IloLinearNumExpr budgetExpr = cplex.linearNumExpr();
-            for (int i = 0; i < n; i++) {
-                budgetExpr.addTerm(cost[i], x[i]);
-            }
-            cplex.addLe(budgetExpr, budget);
+            IloLinearNumExpr budgetExpr =
+                    cplex.linearNumExpr();
 
-            // Solve
-            if (cplex.solve()) {
-                double[] vals = cplex.getValues(x);
-                for (int i = 0; i < n; i++) {
-                    selected[i] = (vals[i] > 0.5); // rounding for binary vars
-                }
+            for (int i = 0; i < n; i++) {
+
+                budgetExpr.addTerm(
+                        cost[i],
+                        x[i]);
+
             }
+
+            cplex.addLe(
+                    budgetExpr,
+                    budget);
+
+            if (cplex.solve()) {
+
+                double[] values =
+                        cplex.getValues(x);
+
+                for (int i = 0; i < n; i++) {
+
+                    selected[i] =
+                            values[i] > 0.5;
+
+                }
+
+            }
+
             cplex.end();
 
         } catch (IloException e) {
-            // If CPLEX fails, fall back to selecting all issues (safe default)
-            System.err.println("[SolverPlan] CPLEX error: " + e.getMessage()
-                    + " — falling back to selecting all issues.");
+
+            System.err.println(
+                    "[SolverPlan] CPLEX error: "
+                            + e.getMessage());
+
+            System.err.println(
+                    "Falling back to selecting every issue.");
+
             for (int i = 0; i < n; i++) {
                 selected[i] = true;
             }
+
         }
+
         return selected;
+
     }
 
     /**
-     * Utility value of repairing each issue type [0.0–1.0].
-     * Higher = more beneficial to the system's accumulated utility.
+     * Estimated utility of repairing each issue.
      */
     private double getUtility(Issue issue) {
+
         switch (issue.getType()) {
-            case "CF3": return 1.0;
-            case "CF1": return 0.9;
-            case "CF5": return 0.8;
-            case "CF2": return 0.6;
-            default:    return 0.1;
+
+            case "CF3":
+                return 1.0;
+
+            case "CF1":
+                return 0.9;
+
+            case "CF5":
+                return 0.8;
+
+            case "CF2":
+                return 0.6;
+
+            default:
+                return 0.1;
+
         }
+
     }
 
     /**
-     * Estimated repair cost in ms for each issue type.
-     * CF3 (heavy redeploy) is the most expensive; CF2 (restart) cheapest.
+     * Estimated repair cost (milliseconds).
      */
     private double getCost(Issue issue) {
-        switch (issue.getType()) {
-            case "CF3": return 15.0;
-            case "CF1": return 8.0;
-            case "CF5": return 10.0;
-            case "CF2": return 5.0;
-            default:    return 20.0;
-        }
-    }
 
-    // ---------------------------------------------------------------
-    // Strategy factory helpers (identical to Plan.java)
-    // ---------------------------------------------------------------
-
-    private AdaptationStrategy createStrategy(Issue issue) {
-        List<Impact> impacts = issue.getImpacts();
         switch (issue.getType()) {
-            case "CF1": {
-                Impact imp = getImpactByType(impacts, "unknownComponent");
-                return createLwRedeployComponent(
-                        (Component) imp.getArchitecturalElement());
-            }
-            case "CF2": {
-                Impact imp = getImpactByType(impacts, "affectedComponent");
-                return createRestartComponent(
-                        (Component) imp.getArchitecturalElement());
-            }
-            case "CF3": {
-                Impact impType   = getImpactByType(impacts, "affectedComponentType");
-                Impact impTenant = getImpactByType(impacts, "affectedTenant");
-                return createHwRedeployComponent(
-                        (Tenant)        impTenant.getArchitecturalElement(),
-                        (ComponentType) impType.getArchitecturalElement());
-            }
-            case "CF5": {
-                Impact imp = getImpactByType(impacts, "affectedRequiredInterface");
-                return createRecreateConnector(
-                        (RequiredInterface) imp.getArchitecturalElement());
-            }
+
+            case "CF2":
+                return 5.0;
+
+            case "CF1":
+                return 8.0;
+
+            case "CF5":
+                return 10.0;
+
+            case "CF3":
+                return 15.0;
+
             default:
-                return null;
+                return 20.0;
+
         }
+
     }
 
-    private AdaptationStrategy createLwRedeployComponent(Component c) {
-        AdaptationStrategy s = ComparchFactory.eINSTANCE.createAdaptationStrategy();
-        s.setType("LwRedeployComponent");
-        InputParameter p = ComparchFactory.eINSTANCE.createInputParameter();
-        p.setType("redeployComponent"); p.setArchitecturalElement(c);
-        s.getInputParameters().add(p);
-        return s;
+    /**
+     * Creates the corresponding adaptation strategy.
+     */
+    private AdaptationStrategy createStrategy(Issue issue) {
+
+        List<Impact> impacts =
+                issue.getImpacts();
+
+        switch (issue.getType()) {
+
+            case "CF1":
+
+                return createLwRedeployComponent(
+                        (Component)
+                                getImpactByType(
+                                        impacts,
+                                        "unknownComponent")
+                                        .getArchitecturalElement());
+
+            case "CF2":
+
+                return createRestartComponent(
+                        (Component)
+                                getImpactByType(
+                                        impacts,
+                                        "affectedComponent")
+                                        .getArchitecturalElement());
+
+            case "CF3":
+
+                return createHwRedeployComponent(
+
+                        (Tenant)
+                                getImpactByType(
+                                        impacts,
+                                        "affectedTenant")
+                                        .getArchitecturalElement(),
+
+                        (ComponentType)
+                                getImpactByType(
+                                        impacts,
+                                        "affectedComponentType")
+                                        .getArchitecturalElement());
+
+            case "CF5":
+
+                return createRecreateConnector(
+
+                        (RequiredInterface)
+                                getImpactByType(
+                                        impacts,
+                                        "affectedRequiredInterface")
+                                        .getArchitecturalElement());
+
+            default:
+
+                return null;
+
+        }
+
     }
 
-    private AdaptationStrategy createRestartComponent(Component c) {
-        AdaptationStrategy s = ComparchFactory.eINSTANCE.createAdaptationStrategy();
-        s.setType("RestartComponent");
-        InputParameter p = ComparchFactory.eINSTANCE.createInputParameter();
-        p.setType("restartComponent"); p.setArchitecturalElement(c);
-        s.getInputParameters().add(p);
-        return s;
+    private AdaptationStrategy createLwRedeployComponent(Component component) {
+
+        AdaptationStrategy strategy =
+                ComparchFactory.eINSTANCE.createAdaptationStrategy();
+
+        strategy.setType("LwRedeployComponent");
+
+        InputParameter parameter =
+                ComparchFactory.eINSTANCE.createInputParameter();
+
+        parameter.setType("redeployComponent");
+        parameter.setArchitecturalElement(component);
+
+        strategy.getInputParameters().add(parameter);
+
+        return strategy;
+
     }
 
-    private AdaptationStrategy createHwRedeployComponent(Tenant t,
-                                                          ComponentType ct) {
-        AdaptationStrategy s = ComparchFactory.eINSTANCE.createAdaptationStrategy();
-        s.setType("HwRedeployComponent");
-        InputParameter p1 = ComparchFactory.eINSTANCE.createInputParameter();
-        p1.setType("tenant"); p1.setArchitecturalElement(t);
-        s.getInputParameters().add(p1);
-        InputParameter p2 = ComparchFactory.eINSTANCE.createInputParameter();
-        p2.setType("componentType"); p2.setArchitecturalElement(ct);
-        s.getInputParameters().add(p2);
-        return s;
+    private AdaptationStrategy createRestartComponent(Component component) {
+
+        AdaptationStrategy strategy =
+                ComparchFactory.eINSTANCE.createAdaptationStrategy();
+
+        strategy.setType("RestartComponent");
+
+        InputParameter parameter =
+                ComparchFactory.eINSTANCE.createInputParameter();
+
+        parameter.setType("restartComponent");
+        parameter.setArchitecturalElement(component);
+
+        strategy.getInputParameters().add(parameter);
+
+        return strategy;
+
     }
 
-    private AdaptationStrategy createRecreateConnector(RequiredInterface ri) {
-        AdaptationStrategy s = ComparchFactory.eINSTANCE.createAdaptationStrategy();
-        s.setType("RecreateConnector");
-        InputParameter p = ComparchFactory.eINSTANCE.createInputParameter();
-        p.setType("requiredInterface"); p.setArchitecturalElement(ri);
-        s.getInputParameters().add(p);
-        return s;
+    private AdaptationStrategy createHwRedeployComponent(
+            Tenant tenant,
+            ComponentType componentType) {
+
+        AdaptationStrategy strategy =
+                ComparchFactory.eINSTANCE.createAdaptationStrategy();
+
+        strategy.setType("HwRedeployComponent");
+
+        InputParameter tenantParameter =
+                ComparchFactory.eINSTANCE.createInputParameter();
+
+        tenantParameter.setType("tenant");
+        tenantParameter.setArchitecturalElement(tenant);
+
+        strategy.getInputParameters().add(tenantParameter);
+
+        InputParameter componentParameter =
+                ComparchFactory.eINSTANCE.createInputParameter();
+
+        componentParameter.setType("componentType");
+        componentParameter.setArchitecturalElement(componentType);
+
+        strategy.getInputParameters().add(componentParameter);
+
+        return strategy;
+
     }
 
-    private Impact getImpactByType(List<Impact> impacts, String type) {
+    private AdaptationStrategy createRecreateConnector(
+            RequiredInterface requiredInterface) {
+
+        AdaptationStrategy strategy =
+                ComparchFactory.eINSTANCE.createAdaptationStrategy();
+
+        strategy.setType("RecreateConnector");
+
+        InputParameter parameter =
+                ComparchFactory.eINSTANCE.createInputParameter();
+
+        parameter.setType("requiredInterface");
+        parameter.setArchitecturalElement(requiredInterface);
+
+        strategy.getInputParameters().add(parameter);
+
+        return strategy;
+
+    }
+
+    private Impact getImpactByType(
+            List<Impact> impacts,
+            String type) {
+
         return impacts.stream()
                 .filter(i -> i.getType().equals(type))
                 .findFirst()
-                .orElseThrow(() -> new IllegalStateException(
-                        "Impact type not found: " + type));
+                .orElseThrow(() ->
+                        new IllegalStateException(
+                                "Impact not found: " + type));
+
     }
+
 }

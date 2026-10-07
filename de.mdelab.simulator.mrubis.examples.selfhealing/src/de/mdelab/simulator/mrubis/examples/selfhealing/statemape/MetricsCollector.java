@@ -2,17 +2,18 @@ package de.mdelab.simulator.mrubis.examples.selfhealing.statemape;
 
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.Locale;
 
 /**
  * Collector encargado de almacenar las métricas del experimento.
  *
  * Registra:
- * - estrategia de planificación
- * - nivel de falla
- * - repetición experimental
- * - T_ajuste
- * - T_estab
- * - utilidad acumulada
+ * - Estrategia de planificación
+ * - Nivel de falla (CF)
+ * - Repetición experimental
+ * - Tiempo de ajuste (T_ajuste)
+ * - Tiempo de estabilización (T_estab)
+ * - Utilidad acumulada
  *
  * Exporta los resultados en formato CSV.
  *
@@ -21,9 +22,7 @@ import java.io.IOException;
  */
 public class MetricsCollector {
 
-
     private final FileWriter writer;
-
 
     /**
      * Inicializa el archivo CSV.
@@ -34,15 +33,21 @@ public class MetricsCollector {
 
         writer = new FileWriter(path);
 
+        // Separador ';' para evitar conflictos con Excel
         writer.write(
-            "estrategia,cf,repeticion,"
-            + "t_ajuste_ms,t_estab_ms,utilidad\n"
-        );
+                "estrategia;cf;repeticion;"
+              + "t_ajuste_ms;t_estab_ms;utilidad\n");
     }
-
 
     /**
      * Registra una ejecución experimental.
+     *
+     * @param estrategia Estrategia utilizada
+     * @param cf Nivel de falla crítica
+     * @param repeticion Número de repetición
+     * @param tAjuste Tiempo de ajuste (ms)
+     * @param tEstab Tiempo de estabilización (ms)
+     * @param utilidad Utilidad acumulada
      */
     public void record(
             String estrategia,
@@ -53,26 +58,24 @@ public class MetricsCollector {
             double utilidad
     ) throws IOException {
 
-
         writer.write(
-            estrategia + "," +
-            cf + "," +
-            repeticion + "," +
-            tAjuste + "," +
-            tEstab + "," +
-            String.format("%.6f", utilidad)
-            + "\n"
+                estrategia + ";" +
+                cf + ";" +
+                repeticion + ";" +
+                tAjuste + ";" +
+                tEstab + ";" +
+                String.format(Locale.US, "%.6f", utilidad) +
+                "\n"
         );
 
+        // Guarda inmediatamente cada registro
         writer.flush();
     }
-
 
     /**
      * Cierra el archivo CSV.
      */
     public void close() throws IOException {
-
         writer.close();
     }
 }
