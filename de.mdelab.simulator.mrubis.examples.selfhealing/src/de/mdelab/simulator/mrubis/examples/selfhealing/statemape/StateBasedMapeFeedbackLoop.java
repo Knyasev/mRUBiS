@@ -26,11 +26,13 @@ import de.mdelab.simulator.mrubis.utility.MRubisSelfHealingUtilityFunction;
  *
  * midiendo:
  *
- * - T_ajuste
- * - T_estab
- * - utilidad acumulada
- *
- * mediante System.nanoTime().
+ * - T_ajuste y T_estab (ms, System.nanoTime()) y las rondas en que se alcanzan
+ * - utilidad final: computeUtility() al terminar la última ronda
+ * - utilidad acumulada: suma de computeUtility() al final de cada ronda
+ *   (área bajo la curva de utilidad, con rondas de paso uniforme)
+ * - utilidad acumulada post-falla: suma de computeUtility() medida justo
+ *   después de inyectar la falla y antes de cualquier acción del ciclo
+ * - t_plan_ms: tiempo acumulado en la fase Plan (System.nanoTime())
  *
  * Contribución técnica original –
  * Wilson Israel Gonzalez Armijos
@@ -68,7 +70,7 @@ public class StateBasedMapeFeedbackLoop {
     // ---------------------------------------------------------------
     public static final double FRACCION_AJUSTE = 0.6;
 
-    public static final double FRACCION_ESTAB = 0.95;
+    public static final double FRACCION_ESTAB = 0.90;
 
     private final double umbralAjuste;
 
@@ -98,6 +100,30 @@ public class StateBasedMapeFeedbackLoop {
 
 
     private double utilidadFinal = 0.0;
+
+
+    // ---------------------------------------------------------------
+    // CAMBIO 7: instrumentación adicional (utilidad acumulada real,
+    // costo de la fase Plan y conteo de rondas).
+    // ---------------------------------------------------------------
+    private double utilidadAcumulada = 0.0;
+
+    private double utilidadAcumuladaPostFalla = 0.0;
+
+    private long tPlanNs = 0;
+
+    private int planificaciones = 0;
+
+    private int rondas = 0;
+
+    private int rondasAjuste = -1;
+
+    private int rondasEstab = -1;
+
+    // Tiempo gastado en mediciones de instrumentación dentro de run();
+    // se descuenta de las marcas de tiempo para no alterar T_ajuste ni
+    // T_estab.
+    private long overheadNs = 0;
 
 
 
@@ -130,9 +156,29 @@ public class StateBasedMapeFeedbackLoop {
 
 
     /**
-     * Ejecuta un ciclo completo MAPE-K.
+     * Ejecuta un ciclo completo MAPE-K (una ronda de simulación).
      */
     public void run(Architecture architecture) {
+
+
+        rondas++;
+
+
+        // Utilidad inmediatamente después de inyectar la falla y ANTES de
+        // cualquier acción del ciclo MAPE-K. El tiempo de esta medición se
+        // acumula en overheadNs y se descuenta de las marcas de tiempo.
+        long inicioMedicion =
+                System.nanoTime();
+
+        double utilidadPostFalla =
+                utilityFunction.computeUtility(
+                        architecture);
+
+        overheadNs +=
+                System.nanoTime() - inicioMedicion;
+
+        utilidadAcumuladaPostFalla += utilidadPostFalla;
+
 
 
         Monitor monitor = new Monitor();
@@ -160,6 +206,11 @@ public class StateBasedMapeFeedbackLoop {
                     System.nanoTime();
 
 
+            tPlanNs += (finPlan - inicioPlan);
+
+            planificaciones++;
+
+
             Execute execute = new Execute();
 
             execute.execute(architecture);
@@ -170,7 +221,7 @@ public class StateBasedMapeFeedbackLoop {
 
 
         long tiempoActual =
-                System.nanoTime();
+                System.nanoTime() - overheadNs;
 
 
 
@@ -181,6 +232,8 @@ public class StateBasedMapeFeedbackLoop {
 
 
         utilidadFinal = utilidad;
+
+        utilidadAcumulada += utilidad;
 
 
 
@@ -211,6 +264,8 @@ public class StateBasedMapeFeedbackLoop {
             t_ajuste = tiempoActual;
 
             ajusteRegistrado = true;
+
+            rondasAjuste = rondas;
         }
     }
 
@@ -237,6 +292,8 @@ public class StateBasedMapeFeedbackLoop {
                 t_estab = tiempoActual;
 
                 estabRegistrada = true;
+
+                rondasEstab = rondas;
             }
 
         }else{
@@ -311,6 +368,23 @@ public class StateBasedMapeFeedbackLoop {
 
         utilidadFinal = 0.0;
 
+
+        utilidadAcumulada = 0.0;
+
+        utilidadAcumuladaPostFalla = 0.0;
+
+        tPlanNs = 0;
+
+        planificaciones = 0;
+
+        rondas = 0;
+
+        rondasAjuste = -1;
+
+        rondasEstab = -1;
+
+        overheadNs = 0;
+
     }
 
 
@@ -351,6 +425,49 @@ public class StateBasedMapeFeedbackLoop {
     public double getUtilidadFinal(){
 
         return utilidadFinal;
+    }
+
+
+    public double getUtilidadAcumulada(){
+
+        return utilidadAcumulada;
+    }
+
+
+    public double getUtilidadAcumuladaPostFalla(){
+
+        return utilidadAcumuladaPostFalla;
+    }
+
+
+    /** Tiempo acumulado en la fase Plan, en milisegundos. */
+    public double getTPlanMs(){
+
+        return tPlanNs / 1_000_000.0;
+    }
+
+
+    public int getPlanificaciones(){
+
+        return planificaciones;
+    }
+
+
+    public int getRondas(){
+
+        return rondas;
+    }
+
+
+    public int getRondasAjuste(){
+
+        return rondasAjuste;
+    }
+
+
+    public int getRondasEstab(){
+
+        return rondasEstab;
     }
 
 
@@ -405,8 +522,13 @@ public class StateBasedMapeFeedbackLoop {
         };
 
 
+        // El nombre incluye la versión del instrumento y el retardo, para
+        // no sobrescribir corridas anteriores. MetricsCollector se niega a
+        // abrir un archivo que ya existe.
         String csvPath =
-                "./results/experimento_factorial_completo.csv";
+                "./results/experimento_factorial_v2_delay"
+                + injectionDelayMS
+                + ".csv";
 
 
         MetricsCollector metrics =
@@ -433,8 +555,9 @@ public class StateBasedMapeFeedbackLoop {
 
 
                     // CAMBIO 5: utilidad del sistema SANO, medida antes
-                    // de inyectar cualquier falla.
-                    
+                    // de inyectar cualquier falla. Sirve como referencia
+                    // para expresar los umbrales como fracción (0.6 /
+                    // 0.90) en vez de valores absolutos sin sentido.
                     double utilidadSana =
                             utilityFunction.computeUtility(
                                     architecture);
@@ -494,7 +617,7 @@ public class StateBasedMapeFeedbackLoop {
                     // y T_estab. Si se llama dentro del do-while (como
                     // en la versión original), ciclosEstables se resetea
                     // a 0 en cada ronda y NUNCA puede llegar a
-                    // CICLOS_ESTABLES=	 rondas consecutivas — por eso
+                    // CICLOS_ESTABLES=3 rondas consecutivas — por eso
                     // t_estab_ms salía -1 en las 360 filas.
                     loop.registrarFalla();
 
@@ -524,7 +647,15 @@ public class StateBasedMapeFeedbackLoop {
                             rep,
                             loop.getTAjusteMs(),
                             loop.getTEstabMs(),
-                            loop.getUtilidadFinal()
+                            loop.getRondasAjuste(),
+                            loop.getRondasEstab(),
+                            loop.getRondas(),
+                            utilidadSana,
+                            loop.getUtilidadFinal(),
+                            loop.getUtilidadAcumulada(),
+                            loop.getUtilidadAcumuladaPostFalla(),
+                            loop.getTPlanMs(),
+                            loop.getPlanificaciones()
                     );
 
 
@@ -539,13 +670,16 @@ public class StateBasedMapeFeedbackLoop {
 
 
                     System.out.printf(
-                            "[%s][%s][Rep %d] Ajuste=%d ms Estab=%d ms Utilidad=%.4f%n",
+                            "[%s][%s][Rep %d] Ajuste=%d ms Estab=%d ms Rondas=%d UtilFinal=%.4f UtilAcum=%.4f TPlan=%.2f ms%n",
                             strategy.name(),
                             nivelCF.name(),
                             rep,
                             loop.getTAjusteMs(),
                             loop.getTEstabMs(),
-                            loop.getUtilidadFinal()
+                            loop.getRondas(),
+                            loop.getUtilidadFinal(),
+                            loop.getUtilidadAcumulada(),
+                            loop.getTPlanMs()
                     );
 
                 }
