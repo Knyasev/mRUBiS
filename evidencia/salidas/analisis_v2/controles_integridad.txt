@@ -1,0 +1,16 @@
+Filas: 360
+Repeticiones por celda (estrategia x CF):
+cf              CF1  CF2  CF3  CF5
+estrategia                        
+SOLVER           30   30   30   30
+STATIC           30   30   30   30
+UTILITY_DRIVEN   30   30   30   30
+Valores distintos de rondas_total: [20]
+Valores distintos de utilidad_sana: [31.671358]
+Máx. |utilidad_final - utilidad_sana| por nivel CF:
+cf
+CF1    0.000000
+CF2    4.352523
+CF3    0.000000
+CF5    0.000000
+Repeticiones censuradas (t_estab_ms = -1): 2
