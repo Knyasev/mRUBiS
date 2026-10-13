@@ -10,40 +10,39 @@ import java.nio.file.StandardOpenOption;
 import java.util.Locale;
 
 /**
- * Exporta a CSV las métricas de cada repetición del diseño factorial.
+ * Exporta a CSV las metricas de cada repeticion del diseno factorial.
+ *
+ * v3: se anade la columna problemas_pendientes, que registra lo que
+ * devuelve simulator.validateModel() en cada repeticion (cantidad de
+ * problemas detectados tras la validacion).
  *
  * Formato: separador ";" y punto decimal (Locale.ROOT). Una fila por
- * repetición. Cada fila se escribe y se vacía (flush) de inmediato, de modo
- * que una interrupción de la corrida no pierde lo ya registrado.
+ * repeticion. Cada fila se escribe y se vacia (flush) de inmediato.
  *
- * Si el archivo ya existe, el constructor lanza una excepción en lugar de
- * sobrescribirlo (protege los datasets de corridas anteriores).
+ * Si el archivo ya existe, el constructor lanza una excepcion en lugar
+ * de sobrescribirlo.
  *
  * Columnas:
- *   estrategia, cf, repeticion
- *   t_ajuste_ms, t_estab_ms            tiempos desde el registro de la falla
- *                                      (-1 si no se alcanzó el umbral)
- *   rondas_ajuste, rondas_estab        ronda en que se alcanzó cada umbral
- *                                      (-1 si no se alcanzó)
- *   rondas_total                       rondas ejecutadas en la repetición
- *   utilidad_sana                      computeUtility() antes de la falla
- *   utilidad_final                     computeUtility() al final de la última ronda
- *   utilidad_acum                      suma de computeUtility() al final de cada ronda
- *   utilidad_acum_postfalla            suma de computeUtility() justo después de
- *                                      inyectar la falla, antes de actuar
- *   t_plan_ms                          tiempo acumulado en la fase Plan
- *   n_planificaciones                  rondas en las que se ejecutó la fase Plan
+ *   estrategia, cf, fallas_por_ronda, repeticion
+ *   t_ajuste_ms, t_estab_ms
+ *   rondas_ajuste, rondas_estab, rondas_total
+ *   utilidad_sana, utilidad_final, utilidad_acum
+ *   utilidad_acum_postfalla
+ *   t_plan_ms, n_planificaciones
+ *   problemas_pendientes                      (v3)
  *
- * Contribución técnica original –
+ * Contribucion tecnica original 
  * Wilson Israel Gonzalez Armijos
  */
 public class MetricsCollector {
 
     private static final String ENCABEZADO =
-            "estrategia;cf;repeticion;t_ajuste_ms;t_estab_ms;"
+            "estrategia;cf;fallas_por_ronda;repeticion;"
+            + "t_ajuste_ms;t_estab_ms;"
             + "rondas_ajuste;rondas_estab;rondas_total;"
             + "utilidad_sana;utilidad_final;utilidad_acum;"
-            + "utilidad_acum_postfalla;t_plan_ms;n_planificaciones";
+            + "utilidad_acum_postfalla;t_plan_ms;n_planificaciones;"
+            + "problemas_pendientes";
 
     private final BufferedWriter writer;
 
@@ -75,10 +74,13 @@ public class MetricsCollector {
 
     /**
      * Registra una repetición del experimento.
+     *
+     * v3: nuevo parámetro problemasPendientes.
      */
     public void record(
             String estrategia,
             String cf,
+            int fallasPorRonda,
             int repeticion,
             long tAjusteMs,
             long tEstabMs,
@@ -90,13 +92,15 @@ public class MetricsCollector {
             double utilidadAcum,
             double utilidadAcumPostFalla,
             double tPlanMs,
-            int nPlanificaciones) {
+            int nPlanificaciones,
+            int problemasPendientes) {
 
         String fila = String.format(
                 Locale.ROOT,
-                "%s;%s;%d;%d;%d;%d;%d;%d;%.6f;%.6f;%.6f;%.6f;%.3f;%d",
+                "%s;%s;%d;%d;%d;%d;%d;%d;%d;%.6f;%.6f;%.6f;%.6f;%.3f;%d;%d",
                 estrategia,
                 cf,
+                fallasPorRonda,
                 repeticion,
                 tAjusteMs,
                 tEstabMs,
@@ -108,7 +112,8 @@ public class MetricsCollector {
                 utilidadAcum,
                 utilidadAcumPostFalla,
                 tPlanMs,
-                nPlanificaciones);
+                nPlanificaciones,
+                problemasPendientes);
 
         try {
             this.writer.write(fila);

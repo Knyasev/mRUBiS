@@ -14,24 +14,25 @@ import de.mdelab.comparch.Tenant;
 import de.mdelab.simulator.Scenario;
 import de.mdelab.simulator.Simulator;
 import de.mdelab.simulator.mrubis.examples.selfhealing.SelfHealingConfig;
-import de.mdelab.simulator.mrubis.examples.selfhealing.SingleFaultSelfHealingScenario;
-import de.mdelab.simulator.mrubis.examples.selfhealing.SingleFaultSelfHealingScenario.CFLevel;
+import de.mdelab.simulator.mrubis.examples.selfhealing.MultiFaultSelfHealingScenario;
+import de.mdelab.simulator.mrubis.examples.selfhealing.MultiFaultSelfHealingScenario.CFLevel;
 import de.mdelab.simulator.mrubis.utility.MRubisSelfHealingUtilityFunction;
 
 /**
  * DIAGNÓSTICO TEMPORAL. No forma parte del experimento y no modifica
  * StateBasedMapeFeedbackLoop. Se puede borrar al terminar.
  *
- * Ejecuta UNA repetición por combinación (estrategia, nivel CF) y, en cada
- * ronda, mide excepciones y utilidad en cuatro puntos:
+ * Ejecuta UNA repetición por combinación (estrategia, nivel CF, carga)
+ * y, en cada ronda, mide excepciones y utilidad en cuatro puntos:
  *
- *   Pre   justo después de injectIssues()        (falla recién inyectada)
+ *   Pre   justo después de injectIssues()         (falla recién inyectada)
  *   Post  después de Monitor-Analyze-Plan-Execute (fin del ciclo MAPE-K)
  *   Val   después de simulator.validateModel()    (tras los validadores)
  *   Ini   (solo para excIny) excepciones al cierre de la ronda anterior
  *
  * Columnas de salida:
  *   r          número de ronda
+ *   fallas     fallas simultáneas configuradas por ronda
  *   issues     Issues que crea Analyze en esa ronda
  *   excIny     excepciones que aparecen entre el cierre de la ronda anterior
  *              y el punto Pre (inyección; negativo = algo las borró)
@@ -41,7 +42,10 @@ import de.mdelab.simulator.mrubis.utility.MRubisSelfHealingUtilityFunction;
  *   valIssues  valor que devuelve validateModel()
  *
  * El resultado se imprime en consola y se guarda en
- * ./results/diagnostico_cf2.txt (se sobrescribe en cada ejecución).
+ * ./results/diagnostico_cf2_rafagas.txt (se sobrescribe en cada ejecución).
+ *
+ * Contribución técnica original –
+ * Wilson Israel Gonzalez Armijos
  */
 public class DiagnosticoCF2 {
 
@@ -56,13 +60,28 @@ public class DiagnosticoCF2 {
     // Solo para el diagnóstico (debe ser mayor que 0).
     private static final long INJECTION_DELAY_MS = 10;
 
-    // Cambiar para diagnosticar otras combinaciones.
+    // === Cambiar para diagnosticar otras combinaciones ===
+
     private static final StateBasedMapeFeedbackLoop.PlanningStrategy[] ESTRATEGIAS = {
             StateBasedMapeFeedbackLoop.PlanningStrategy.STATIC
+            //, StateBasedMapeFeedbackLoop.PlanningStrategy.UTILITY_DRIVEN
+            //, StateBasedMapeFeedbackLoop.PlanningStrategy.SOLVER
     };
 
     private static final CFLevel[] NIVELES = {
             CFLevel.CF2
+    };
+
+    /**
+     * Cargas a diagnosticar (fallas simultáneas por ronda).
+     * 1  = línea base (comportamiento del escenario original)
+     * 10 = ráfaga media
+     * 50 = ráfaga grande
+     */
+    private static final int[] CARGAS = {
+            1
+            //, 10
+            //, 50
     };
 
 
@@ -72,11 +91,13 @@ public class DiagnosticoCF2 {
 
         for (StateBasedMapeFeedbackLoop.PlanningStrategy estrategia : ESTRATEGIAS) {
             for (CFLevel nivel : NIVELES) {
-                ejecutar(estrategia, nivel, salida);
+                for (int carga : CARGAS) {
+                    ejecutar(estrategia, nivel, carga, salida);
+                }
             }
         }
 
-        File archivo = new File("./results/diagnostico_cf2.txt");
+        File archivo = new File("./results/diagnostico_cf2_rafagas.txt");
         File carpeta = archivo.getAbsoluteFile().getParentFile();
         if (carpeta != null && !carpeta.exists()) {
             carpeta.mkdirs();
@@ -94,6 +115,7 @@ public class DiagnosticoCF2 {
     private static void ejecutar(
             StateBasedMapeFeedbackLoop.PlanningStrategy estrategia,
             CFLevel nivel,
+            int carga,
             StringBuilder salida) {
 
         Architecture architecture = SelfHealingConfig.loadModel(MODEL_URI);
@@ -101,8 +123,9 @@ public class DiagnosticoCF2 {
         MRubisSelfHealingUtilityFunction utilityFunction =
                 new MRubisSelfHealingUtilityFunction(EXCEPTION_THRESHOLD);
 
-        Scenario scenario = new SingleFaultSelfHealingScenario(
-                architecture, EXCEPTION_THRESHOLD, nivel);
+        // === NUEVO: escenario con ráfagas ===
+        Scenario scenario = new MultiFaultSelfHealingScenario(
+                architecture, EXCEPTION_THRESHOLD, nivel, carga);
 
         Simulator simulator = Simulator.FACTORY.createSimulator(
                 architecture,
@@ -119,9 +142,9 @@ public class DiagnosticoCF2 {
         double utilidadSana = utilityFunction.computeUtility(architecture);
 
         salida.append(String.format(Locale.ROOT,
-                "%n===== [DIAG] estrategia=%s  cf=%s  utilidadSana=%.6f  umbral0.90=%.4f =====%n",
-                estrategia.name(), nivel.name(), utilidadSana, 0.90 * utilidadSana));
-        salida.append("[DIAG] r issues excIny excPre excPost excVal "
+                "%n===== [DIAG] estrategia=%s  cf=%s  carga=%d  utilidadSana=%.6f  umbral0.90=%.4f =====%n",
+                estrategia.name(), nivel.name(), carga, utilidadSana, 0.90 * utilidadSana));
+        salida.append("[DIAG] r fallas issues excIny excPre excPost excVal "
                 + "sobrePre sobrePost sobreVal uPre uPost uVal valIssues\n");
 
         int excCierreAnterior = contarExcepciones(architecture);
@@ -179,8 +202,8 @@ public class DiagnosticoCF2 {
             }
 
             salida.append(String.format(Locale.ROOT,
-                    "[DIAG] %d %d %d %d %d %d %d %d %d %.4f %.4f %.4f %d%n",
-                    ronda, nIssues, excIny, excPre, excPost, excVal,
+                    "[DIAG] %d %d %d %d %d %d %d %d %d %d %.4f %.4f %.4f %d%n",
+                    ronda, carga, nIssues, excIny, excPre, excPost, excVal,
                     sobrePre, sobrePost, sobreVal, uPre, uPost, uVal, valIssues));
 
             excCierreAnterior = excVal;
@@ -188,9 +211,9 @@ public class DiagnosticoCF2 {
         } while (!simulator.isSimulationCompleted());
 
         salida.append(String.format(Locale.ROOT,
-                "[DIAG] RESUMEN: rondas con excepciones inyectadas=%d | sin efecto=%d | "
+                "[DIAG] RESUMEN carga=%d: rondas con excepciones inyectadas=%d | sin efecto=%d | "
                 + "con borrado entre rondas=%d | borrado en Execute=%d | borrado en validateModel=%d%n",
-                rondasConInyeccion, rondasSinEfecto, rondasConBorradoEnInyeccion,
+                carga, rondasConInyeccion, rondasSinEfecto, rondasConBorradoEnInyeccion,
                 rondasConBorradoEnExecute, rondasConBorradoEnValidacion));
 
         // Libera el FileHandler de Simulator.log.

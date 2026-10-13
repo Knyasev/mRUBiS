@@ -10,29 +10,25 @@ import de.mdelab.simulator.Simulator;
 import de.mdelab.simulator.UtilityFunction;
 
 import de.mdelab.simulator.mrubis.examples.selfhealing.SelfHealingConfig;
-import de.mdelab.simulator.mrubis.examples.selfhealing.SingleFaultSelfHealingScenario;
-import de.mdelab.simulator.mrubis.examples.selfhealing.SingleFaultSelfHealingScenario.CFLevel;
+import de.mdelab.simulator.mrubis.examples.selfhealing.MultiFaultSelfHealingScenario;
+import de.mdelab.simulator.mrubis.examples.selfhealing.MultiFaultSelfHealingScenario.CFLevel;
 import de.mdelab.simulator.mrubis.utility.MRubisSelfHealingUtilityFunction;
 
 
 /**
  * Feedback loop MAPE-K instrumentado para experimentación.
  *
- * Ejecuta el diseño factorial completo:
+ * Ejecuta el diseño factorial completo CON RÁFAGAS DE FALLAS.
  *
  * ESTRATEGIAS: STATIC, UTILITY_DRIVEN, SOLVER
- * NIVELES CF: CF1, CF2, CF3, CF5 (CF4 no disponible en el repositorio base)
+ * NIVELES CF: CF1, CF2, CF3, CF5
+ * CARGAS: 1, 10, 50, 100 fallas por ronda
  * REPETICIONES: 30 por celda
  *
- * midiendo:
- *
- * - T_ajuste y T_estab (ms, System.nanoTime()) y las rondas en que se alcanzan
- * - utilidad final: computeUtility() al terminar la última ronda
- * - utilidad acumulada: suma de computeUtility() al final de cada ronda
- *   (área bajo la curva de utilidad, con rondas de paso uniforme)
- * - utilidad acumulada post-falla: suma de computeUtility() medida justo
- *   después de inyectar la falla y antes de cualquier acción del ciclo
- * - t_plan_ms: tiempo acumulado en la fase Plan (System.nanoTime())
+ * v3: el cierre de ronda (medición de utilidad final, acumulada, y
+ * registro de T_ajuste y T_estab) se realiza DESPUÉS de validateModel(),
+ * capturando el estado consolidado del sistema. Se registra además
+ * la cantidad de problemas pendientes que reporta el validador.
  *
  * Contribución técnica original –
  * Wilson Israel Gonzalez Armijos
@@ -47,27 +43,8 @@ public class StateBasedMapeFeedbackLoop {
     }
 
 
-    // ---------------------------------------------------------------
-    // CAMBIO 1: la estrategia deja de ser un campo static final fijo
-    // (que obligaba a recompilar para cambiar de estrategia) y pasa
-    // a ser un campo de instancia, asignado por el constructor.
-    // Esto permite que main() recorra las 3 estrategias en el mismo
-    // proceso de ejecución.
-    // ---------------------------------------------------------------
     private final PlanningStrategy strategy;
 
-
-    // ---------------------------------------------------------------
-    // CAMBIO 5: los umbrales dejan de ser valores absolutos fijos
-    // (0.6 / 0.95) porque computeUtility() del modelo mRUBiS NO
-    // devuelve un valor normalizado entre 0 y 1 (en la práctica
-    // ronda los 27-32 puntos). Comparar esa utilidad contra 0.6 o
-    // 0.95 hacía que el umbral de ajuste se cumpliera casi siempre
-    // en la primera ronda, y el de establecimiento nunca reflejara
-    // nada real. Ahora se pasan como FRACCIÓN de la utilidad del
-    // sistema SANO (medida antes de inyectar la falla), calculada
-    // en main() para cada repetición y entregada a esta instancia.
-    // ---------------------------------------------------------------
     public static final double FRACCION_AJUSTE = 0.6;
 
     public static final double FRACCION_ESTAB = 0.90;
@@ -79,9 +56,7 @@ public class StateBasedMapeFeedbackLoop {
     private static final int CICLOS_ESTABLES = 3;
 
 
-
     private final int exceptionThreshold;
-
 
     private long t_falla = -1;
 
@@ -89,23 +64,14 @@ public class StateBasedMapeFeedbackLoop {
 
     private long t_estab = -1;
 
-
-
     private boolean ajusteRegistrado = false;
 
     private boolean estabRegistrada = false;
 
-
     private int ciclosEstables = 0;
-
 
     private double utilidadFinal = 0.0;
 
-
-    // ---------------------------------------------------------------
-    // CAMBIO 7: instrumentación adicional (utilidad acumulada real,
-    // costo de la fase Plan y conteo de rondas).
-    // ---------------------------------------------------------------
     private double utilidadAcumulada = 0.0;
 
     private double utilidadAcumuladaPostFalla = 0.0;
@@ -120,23 +86,15 @@ public class StateBasedMapeFeedbackLoop {
 
     private int rondasEstab = -1;
 
-    // Tiempo gastado en mediciones de instrumentación dentro de run();
-    // se descuenta de las marcas de tiempo para no alterar T_ajuste ni
-    // T_estab.
     private long overheadNs = 0;
 
+    // v3: problemas pendientes que reporta validateModel()
+    private int problemasPendientesFinales = 0;
 
 
     private final MRubisSelfHealingUtilityFunction utilityFunction;
 
 
-
-    // CAMBIO 2: el constructor ahora recibe también la estrategia
-    // a utilizar en esta instancia del ciclo MAPE-K, y (CAMBIO 5)
-    // los umbrales ya calculados como fracción de la utilidad sana
-    // de ESTA repetición (distinta utilidad sana por CF/estrategia
-    // si el modelo se recarga cada vez, así que se recalculan en
-    // cada iteración de main()).
     public StateBasedMapeFeedbackLoop(int exceptionThreshold, PlanningStrategy strategy,
             double umbralAjuste, double umbralEstab) {
 
@@ -154,145 +112,106 @@ public class StateBasedMapeFeedbackLoop {
     }
 
 
-
     /**
-     * Ejecuta un ciclo completo MAPE-K (una ronda de simulación).
+     * Ejecuta la fase MAPE-K de la ronda.
+     *
+     * v3: YA NO mide utilidad final ni registra umbrales. Esas
+     * operaciones se realizan en {@link #cerrarRonda(Architecture, int)}
+     * después de que validateModel() haya limpiado el modelo.
      */
     public void run(Architecture architecture) {
 
-
         rondas++;
 
-
-        // Utilidad inmediatamente después de inyectar la falla y ANTES de
-        // cualquier acción del ciclo MAPE-K. El tiempo de esta medición se
-        // acumula en overheadNs y se descuenta de las marcas de tiempo.
-        long inicioMedicion =
-                System.nanoTime();
+        // Utilidad inmediatamente después de inyectar la falla y ANTES
+        // de cualquier acción del ciclo MAPE-K.
+        long inicioMedicion = System.nanoTime();
 
         double utilidadPostFalla =
-                utilityFunction.computeUtility(
-                        architecture);
+                utilityFunction.computeUtility(architecture);
 
-        overheadNs +=
-                System.nanoTime() - inicioMedicion;
+        overheadNs += System.nanoTime() - inicioMedicion;
 
         utilidadAcumuladaPostFalla += utilidadPostFalla;
 
-
-
         Monitor monitor = new Monitor();
-
 
         if (monitor.monitor(architecture)) {
 
-
             Analyze analyze = new Analyze();
+            analyze.analyze(architecture, exceptionThreshold);
 
-            analyze.analyze(
-                    architecture,
-                    exceptionThreshold);
-
-
-
-            long inicioPlan =
-                    System.nanoTime();
-
+            long inicioPlan = System.nanoTime();
 
             runPlanner(architecture);
 
-
-            long finPlan =
-                    System.nanoTime();
-
+            long finPlan = System.nanoTime();
 
             tPlanNs += (finPlan - inicioPlan);
-
             planificaciones++;
 
-
             Execute execute = new Execute();
-
             execute.execute(architecture);
-
-
         }
-
-
-
-        long tiempoActual =
-                System.nanoTime() - overheadNs;
-
-
-
-        double utilidad =
-                utilityFunction.computeUtility(
-                        architecture);
-
-
-
-        utilidadFinal = utilidad;
-
-        utilidadAcumulada += utilidad;
-
-
-
-        registrarTAjuste(
-                tiempoActual,
-                utilidad);
-
-
-
-        registrarTEstablecimiento(
-                tiempoActual,
-                utilidad);
-
+        // v3: la medición de utilidad final y el registro de umbrales
+        // se han movido a cerrarRonda().
     }
 
+
+    /**
+     * Cierra la ronda: mide la utilidad del modelo consolidado (después
+     * de validateModel()), acumula, registra umbrales y guarda los
+     * problemas pendientes que reportó el validador.
+     *
+     * @param architecture          modelo tras validateModel()
+     * @param problemasPendientes   lo que devolvió simulator.validateModel()
+     */
+    public void cerrarRonda(Architecture architecture, int problemasPendientes) {
+
+        problemasPendientesFinales = problemasPendientes;
+
+        long tiempoActual = System.nanoTime() - overheadNs;
+
+        double utilidad = utilityFunction.computeUtility(architecture);
+
+        utilidadFinal = utilidad;
+        utilidadAcumulada += utilidad;
+
+        registrarTAjuste(tiempoActual, utilidad);
+        registrarTEstablecimiento(tiempoActual, utilidad);
+    }
 
 
     private void registrarTAjuste(
             long tiempoActual,
             double utilidad) {
 
-
         if(!ajusteRegistrado
                 && utilidad >= this.umbralAjuste
                 && t_falla > 0) {
 
-
             t_ajuste = tiempoActual;
-
             ajusteRegistrado = true;
-
             rondasAjuste = rondas;
         }
     }
-
 
 
     private void registrarTEstablecimiento(
             long tiempoActual,
             double utilidad) {
 
-
-
         if(estabRegistrada || t_falla <= 0)
             return;
-
-
 
         if(utilidad >= this.umbralEstab){
 
             ciclosEstables++;
 
-
             if(ciclosEstables >= CICLOS_ESTABLES){
 
                 t_estab = tiempoActual;
-
                 estabRegistrada = true;
-
                 rondasEstab = rondas;
             }
 
@@ -300,20 +219,12 @@ public class StateBasedMapeFeedbackLoop {
 
             ciclosEstables = 0;
         }
-
     }
 
 
-
-
-    // CAMBIO 3: runPlanner ahora usa el campo de instancia this.strategy
-    // en lugar de la constante STATIC de la versión original.
-    private void runPlanner(
-            Architecture architecture) {
-
+    private void runPlanner(Architecture architecture) {
 
         switch(this.strategy){
-
 
         case STATIC:
 
@@ -321,8 +232,6 @@ public class StateBasedMapeFeedbackLoop {
                     .plan(architecture);
 
             break;
-
-
 
         case UTILITY_DRIVEN:
 
@@ -332,8 +241,6 @@ public class StateBasedMapeFeedbackLoop {
 
             break;
 
-
-
         case SOLVER:
 
             new SolverPlan()
@@ -341,53 +248,34 @@ public class StateBasedMapeFeedbackLoop {
 
             break;
         }
-
     }
-
 
 
     public void registrarFalla(){
 
-
-        t_falla =
-                System.nanoTime();
-
+        t_falla = System.nanoTime();
 
         t_ajuste = -1;
-
         t_estab = -1;
 
-
         ajusteRegistrado = false;
-
         estabRegistrada = false;
-
 
         ciclosEstables = 0;
 
-
         utilidadFinal = 0.0;
-
-
         utilidadAcumulada = 0.0;
-
         utilidadAcumuladaPostFalla = 0.0;
 
         tPlanNs = 0;
-
         planificaciones = 0;
-
         rondas = 0;
-
         rondasAjuste = -1;
-
         rondasEstab = -1;
-
         overheadNs = 0;
 
+        problemasPendientesFinales = 0;   // v3
     }
-
-
 
 
     public long getTAjusteMs(){
@@ -395,15 +283,11 @@ public class StateBasedMapeFeedbackLoop {
         if(t_ajuste < 0)
             return -1;
 
-
         return
           (t_ajuste - t_falla)
           /
           1_000_000;
-
     }
-
-
 
 
     public long getTEstabMs(){
@@ -411,99 +295,70 @@ public class StateBasedMapeFeedbackLoop {
         if(t_estab < 0)
             return -1;
 
-
         return
           (t_estab - t_falla)
           /
           1_000_000;
-
     }
-
-
 
 
     public double getUtilidadFinal(){
-
         return utilidadFinal;
     }
 
-
     public double getUtilidadAcumulada(){
-
         return utilidadAcumulada;
     }
 
-
     public double getUtilidadAcumuladaPostFalla(){
-
         return utilidadAcumuladaPostFalla;
     }
 
-
-    /** Tiempo acumulado en la fase Plan, en milisegundos. */
     public double getTPlanMs(){
-
         return tPlanNs / 1_000_000.0;
     }
 
-
     public int getPlanificaciones(){
-
         return planificaciones;
     }
 
-
     public int getRondas(){
-
         return rondas;
     }
 
-
     public int getRondasAjuste(){
-
         return rondasAjuste;
     }
 
-
     public int getRondasEstab(){
-
         return rondasEstab;
     }
 
-
+    // v3
+    public int getProblemasPendientesFinales(){
+        return problemasPendientesFinales;
+    }
 
 
     // ---------------------------------------------------------------
-    // CAMBIO 4: main() ahora recorre el diseño factorial COMPLETO
-    // (estrategia x nivel CF x repetición) en una sola ejecución,
-    // y escribe todo en UN SOLO CSV combinado, tal como pide el
-    // entregable de la Actividad 4 ("Base de datos experimental...
-    // incluyendo estrategia, nivel CF, repetición, T_ajuste, T_estab,
-    // utilidad acumulada").
+    // main() con el nuevo flujo de cierre de ronda
     // ---------------------------------------------------------------
     public static void main(String[] args)
             throws IOException {
 
 
-
         String modelURI =
                 "./model/mRUBiS.comparch";
 
-
         int exceptionThreshold = 5;
-
 
         int minPipeSize = 4;
 
-
         int rounds = 20;
-
 
         int repeticiones = 30;
 
-
         long injectionDelayMS = 100;
-
 
         PlanningStrategy[] estrategias = {
                 PlanningStrategy.STATIC,
@@ -511,9 +366,6 @@ public class StateBasedMapeFeedbackLoop {
                 PlanningStrategy.SOLVER
         };
 
-
-        // CF4 excluido: el inyector CF4_Injector no está presente
-        // en el repositorio base (según lo documentado previamente).
         CFLevel[] nivelesCF = {
                 CFLevel.CF1,
                 CFLevel.CF2,
@@ -521,183 +373,146 @@ public class StateBasedMapeFeedbackLoop {
                 CFLevel.CF5
         };
 
+        // Cargas (fallas simultáneas por ronda)
+        int[] cargasPorRonda = { 1, 10, 50, 100 };
 
-        // El nombre incluye la versión del instrumento y el retardo, para
-        // no sobrescribir corridas anteriores. MetricsCollector se niega a
-        // abrir un archivo que ya existe.
+
         String csvPath =
-                "./results/experimento_factorial_v2_delay"
-                + injectionDelayMS
-                + ".csv";
+                "./results/experimento_factorial_v3_rafagas.csv";
 
 
         MetricsCollector metrics =
                 new MetricsCollector(csvPath);
 
 
-
         for (PlanningStrategy strategy : estrategias) {
 
             for (CFLevel nivelCF : nivelesCF) {
 
-                for (int rep = 1; rep <= repeticiones; rep++) {
+                for (int fallasPorRonda : cargasPorRonda) {
+
+                    for (int rep = 1; rep <= repeticiones; rep++) {
 
 
-                    Architecture architecture =
-                            SelfHealingConfig
-                            .loadModel(modelURI);
+                        Architecture architecture =
+                                SelfHealingConfig
+                                .loadModel(modelURI);
 
 
+                        UtilityFunction utilityFunction =
+                                new MRubisSelfHealingUtilityFunction(
+                                        exceptionThreshold);
 
-                    UtilityFunction utilityFunction =
-                            new MRubisSelfHealingUtilityFunction(
-                                    exceptionThreshold);
+                        double utilidadSana =
+                                utilityFunction.computeUtility(
+                                        architecture);
 
+                        double umbralAjuste =
+                                FRACCION_AJUSTE * utilidadSana;
 
-                    // CAMBIO 5: utilidad del sistema SANO, medida antes
-                    // de inyectar cualquier falla. Sirve como referencia
-                    // para expresar los umbrales como fracción (0.6 /
-                    // 0.90) en vez de valores absolutos sin sentido.
-                    double utilidadSana =
-                            utilityFunction.computeUtility(
-                                    architecture);
-
-                    double umbralAjuste =
-                            FRACCION_AJUSTE * utilidadSana;
-
-                    double umbralEstab =
-                            FRACCION_ESTAB * utilidadSana;
+                        double umbralEstab =
+                                FRACCION_ESTAB * utilidadSana;
 
 
-
-                    // Escenario que inyecta ÚNICAMENTE el nivel "nivelCF"
-                    // de esta iteración durante toda la ejecución, en vez
-                    // de rotar entre los 4 tipos como hace el escenario
-                    // original del repositorio base.
-                    Scenario scenario =
-                            new SingleFaultSelfHealingScenario(
-                                    architecture,
-                                    exceptionThreshold,
-                                    nivelCF);
+                        Scenario scenario =
+                                new MultiFaultSelfHealingScenario(
+                                        architecture,
+                                        exceptionThreshold,
+                                        nivelCF,
+                                        fallasPorRonda);
 
 
-
-                    Simulator simulator =
-                            Simulator.FACTORY.createSimulator(
-                                    architecture,
-                                    utilityFunction,
-                                    scenario,
-                                    rounds,
-                                    injectionDelayMS,
-                                    false,
-                                    Level.WARNING,
-                                    false);
-
+                        Simulator simulator =
+                                Simulator.FACTORY.createSimulator(
+                                        architecture,
+                                        utilityFunction,
+                                        scenario,
+                                        rounds,
+                                        injectionDelayMS,
+                                        false,
+                                        Level.WARNING,
+                                        false);
 
 
-                    SelfHealingConfig.addValidators(
-                            simulator,
-                            exceptionThreshold,
-                            minPipeSize);
+                        SelfHealingConfig.addValidators(
+                                simulator,
+                                exceptionThreshold,
+                                minPipeSize);
 
 
-
-                    StateBasedMapeFeedbackLoop loop =
-                            new StateBasedMapeFeedbackLoop(
-                                    exceptionThreshold,
-                                    strategy,
-                                    umbralAjuste,
-                                    umbralEstab);
-
+                        StateBasedMapeFeedbackLoop loop =
+                                new StateBasedMapeFeedbackLoop(
+                                        exceptionThreshold,
+                                        strategy,
+                                        umbralAjuste,
+                                        umbralEstab);
 
 
-                    // CAMBIO 6 (fix crítico): registrarFalla() debe
-                    // llamarse UNA sola vez por repetición, marcando el
-                    // instante t_falla desde el cual se miden T_ajuste
-                    // y T_estab. Si se llama dentro del do-while (como
-                    // en la versión original), ciclosEstables se resetea
-                    // a 0 en cada ronda y NUNCA puede llegar a
-                    // CICLOS_ESTABLES=3 rondas consecutivas — por eso
-                    // t_estab_ms salía -1 en las 360 filas.
-                    loop.registrarFalla();
+                        loop.registrarFalla();
 
 
-                    do{
+                        do{
+
+                            simulator.injectIssues();
+
+                            loop.run(architecture);
+
+                            // v3: medir después de validateModel()
+                            int problemasPendientes =
+                                    simulator.validateModel();
+
+                            loop.cerrarRonda(architecture, problemasPendientes);
+
+                        }while(!simulator.isSimulationCompleted());
 
 
-                        simulator.injectIssues();
+                        metrics.record(
+                                strategy.name(),
+                                nivelCF.name(),
+                                fallasPorRonda,
+                                rep,
+                                loop.getTAjusteMs(),
+                                loop.getTEstabMs(),
+                                loop.getRondasAjuste(),
+                                loop.getRondasEstab(),
+                                loop.getRondas(),
+                                utilidadSana,
+                                loop.getUtilidadFinal(),
+                                loop.getUtilidadAcumulada(),
+                                loop.getUtilidadAcumuladaPostFalla(),
+                                loop.getTPlanMs(),
+                                loop.getPlanificaciones(),
+                                loop.getProblemasPendientesFinales()   // v3
+                        );
 
 
-                        loop.run(architecture);
+                        LogManager.getLogManager().reset();
 
 
-
-                        simulator.validateModel();
-
-
-
-                    }while(!simulator.isSimulationCompleted());
-
-
-
-
-                    metrics.record(
-                            strategy.name(),
-                            nivelCF.name(),
-                            rep,
-                            loop.getTAjusteMs(),
-                            loop.getTEstabMs(),
-                            loop.getRondasAjuste(),
-                            loop.getRondasEstab(),
-                            loop.getRondas(),
-                            utilidadSana,
-                            loop.getUtilidadFinal(),
-                            loop.getUtilidadAcumulada(),
-                            loop.getUtilidadAcumuladaPostFalla(),
-                            loop.getTPlanMs(),
-                            loop.getPlanificaciones()
-                    );
-
-
-
-                    // Libera el/los FileHandler que SimulatorImpl abrió
-                    // sobre "./results/Simulator.log" en esta repetición.
-                    // Sin esto, cada createSimulator() deja un lock
-                    // abierto y, tras ~100 repeticiones, revienta con
-                    // "Couldn't get lock for ./results/Simulator.log".
-                    LogManager.getLogManager().reset();
-
-
-
-                    System.out.printf(
-                            "[%s][%s][Rep %d] Ajuste=%d ms Estab=%d ms Rondas=%d UtilFinal=%.4f UtilAcum=%.4f TPlan=%.2f ms%n",
-                            strategy.name(),
-                            nivelCF.name(),
-                            rep,
-                            loop.getTAjusteMs(),
-                            loop.getTEstabMs(),
-                            loop.getRondas(),
-                            loop.getUtilidadFinal(),
-                            loop.getUtilidadAcumulada(),
-                            loop.getTPlanMs()
-                    );
-
+                        System.out.printf(
+                                "[%s][%s][%d fallas][Rep %d] Ajuste=%d ms Estab=%d ms UtilFinal=%.4f UtilAcum=%.4f TPlan=%.2f ms Pend=%d%n",
+                                strategy.name(),
+                                nivelCF.name(),
+                                fallasPorRonda,
+                                rep,
+                                loop.getTAjusteMs(),
+                                loop.getTEstabMs(),
+                                loop.getUtilidadFinal(),
+                                loop.getUtilidadAcumulada(),
+                                loop.getTPlanMs(),
+                                loop.getProblemasPendientesFinales()
+                        );
+                    }
                 }
-
             }
-
         }
-
 
 
         metrics.close();
 
 
-
         System.out.println(
                 "CSV generado: "
                 + csvPath);
-
     }
-
 }

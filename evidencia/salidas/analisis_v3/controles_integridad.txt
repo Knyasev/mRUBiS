@@ -1,0 +1,85 @@
+Filas totales: 1440
+
+Repeticiones por celda (estrategia × CF × carga):
+estrategia      cf   fallas_por_ronda
+SOLVER          CF1  1                   30
+                     10                  30
+                     50                  30
+                     100                 30
+                CF2  1                   30
+                     10                  30
+                     50                  30
+                     100                 30
+                CF3  1                   30
+                     10                  30
+                     50                  30
+                     100                 30
+                CF5  1                   30
+                     10                  30
+                     50                  30
+                     100                 30
+STATIC          CF1  1                   30
+                     10                  30
+                     50                  30
+                     100                 30
+                CF2  1                   30
+                     10                  30
+                     50                  30
+                     100                 30
+                CF3  1                   30
+                     10                  30
+                     50                  30
+                     100                 30
+                CF5  1                   30
+                     10                  30
+                     50                  30
+                     100                 30
+UTILITY_DRIVEN  CF1  1                   30
+                     10                  30
+                     50                  30
+                     100                 30
+                CF2  1                   30
+                     10                  30
+                     50                  30
+                     100                 30
+                CF3  1                   30
+                     10                  30
+                     50                  30
+                     100                 30
+                CF5  1                   30
+                     10                  30
+                     50                  30
+                     100                 30
+
+Valores distintos de rondas_total: [20]
+Valores distintos de utilidad_sana: [31.671358]
+
+Máx. |utilidad_final - utilidad_sana| por nivel CF:
+cf
+CF1     9.003495
+CF2     0.000000
+CF3    19.009348
+CF5    18.754307
+
+Repeticiones censuradas (t_estab_ms = -1): 270
+
+Distribución de problemas_pendientes:
+problemas_pendientes
+0     1170
+16      90
+17      90
+19      90
+
+Celdas con problemas_pendientes > 0:
+                                 count  median  min  max
+estrategia cf  fallas_por_ronda                         
+SOLVER     CF1 10                   30    19.0   19   19
+               50                   30    19.0   19   19
+               100                  30    19.0   19   19
+           CF3 10                   30    16.0   16   16
+               50                   30    16.0   16   16
+               100                  30    16.0   16   16
+           CF5 10                   30    17.0   17   17
+               50                   30    17.0   17   17
+               100                  30    17.0   17   17
+
