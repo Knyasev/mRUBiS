@@ -10,39 +10,78 @@ import java.nio.file.StandardOpenOption;
 import java.util.Locale;
 
 /**
- * Exporta a CSV las metricas de cada repeticion del diseno factorial.
+ * Exporta a CSV las métricas de cada repetición del diseño factorial
+ * (versión 3: escenarios de ráfaga con presupuesto de reparación).
  *
- * v3: se anade la columna problemas_pendientes, que registra lo que
- * devuelve simulator.validateModel() en cada repeticion (cantidad de
- * problemas detectados tras la validacion).
- *
- * Formato: separador ";" y punto decimal (Locale.ROOT). Una fila por
- * repeticion. Cada fila se escribe y se vacia (flush) de inmediato.
- *
- * Si el archivo ya existe, el constructor lanza una excepcion en lugar
- * de sobrescribirlo.
+ * Formato: separador ";", punto decimal (Locale.ROOT). Una fila por
+ * repetición, escrita y vaciada (flush) de inmediato. Si el archivo ya
+ * existe, el constructor lanza una excepción en lugar de sobrescribirlo.
  *
  * Columnas:
- *   estrategia, cf, fallas_por_ronda, repeticion
- *   t_ajuste_ms, t_estab_ms
- *   rondas_ajuste, rondas_estab, rondas_total
- *   utilidad_sana, utilidad_final, utilidad_acum
- *   utilidad_acum_postfalla
- *   t_plan_ms, n_planificaciones
- *   problemas_pendientes                      (v3)
+ *   estrategia, escenario (CF1|CF2|CF3|CF5|MIXTO), tamano (fallas de la ráfaga),
+ *   capacidad (presupuesto de reparación por ronda), repeticion, semilla
+ *   fallas_planificadas       fallas que el escenario logró elegir
+ *   inyecciones_exitosas      inyecciones que tuvieron efecto
+ *   valida                    1 si la ráfaga produjo pérdida de utilidad, 0 si no
+ *   utilidad_sana             utilidad antes de la ráfaga
+ *   utilidad_post_falla_r1    utilidad justo después de inyectar la ráfaga
+ *   perdida_inicial           utilidad_sana - utilidad_post_falla_r1
+ *   t_ajuste_ms, t_estab_ms   tiempos desde el registro de la falla (-1 si no se alcanzó)
+ *   rondas_ajuste, rondas_estab   ronda en que se alcanzó cada umbral (-1 si no)
+ *   rondas_total              rondas ejecutadas
+ *   utilidad_final            utilidad de cierre de la última ronda
+ *   utilidad_acum             suma de la utilidad de cierre de cada ronda
+ *   perdida_acum              suma de (utilidad_sana - utilidad de cierre) por ronda
+ *   problemas_final           problemas de validación al cierre de la última ronda
+ *   problemas_acum            suma de los problemas de validación por ronda
+ *   reparaciones_ejecutadas   estrategias ejecutadas en total
+ *   reparaciones_diferidas    issues detectados que no se repararon en su ronda
+ *   t_plan_ms, n_planificaciones   tiempo acumulado y número de ejecuciones de Plan
  *
- * Contribucion tecnica original 
+ * Contribución técnica original –
  * Wilson Israel Gonzalez Armijos
  */
 public class MetricsCollector {
 
+    /** Valores de una repetición. */
+    public static class Fila {
+        public String estrategia;
+        public String escenario;
+        public int tamano;
+        public double capacidad;
+        public int repeticion;
+        public long semilla;
+        public int fallasPlanificadas;
+        public int inyeccionesExitosas;
+        public int valida;
+        public double utilidadSana;
+        public double utilidadPostFallaR1;
+        public double perdidaInicial;
+        public long tAjusteMs;
+        public long tEstabMs;
+        public int rondasAjuste;
+        public int rondasEstab;
+        public int rondasTotal;
+        public double utilidadFinal;
+        public double utilidadAcum;
+        public double perdidaAcum;
+        public int problemasFinal;
+        public int problemasAcum;
+        public int reparacionesEjecutadas;
+        public int reparacionesDiferidas;
+        public double tPlanMs;
+        public int nPlanificaciones;
+    }
+
     private static final String ENCABEZADO =
-            "estrategia;cf;fallas_por_ronda;repeticion;"
-            + "t_ajuste_ms;t_estab_ms;"
-            + "rondas_ajuste;rondas_estab;rondas_total;"
-            + "utilidad_sana;utilidad_final;utilidad_acum;"
-            + "utilidad_acum_postfalla;t_plan_ms;n_planificaciones;"
-            + "problemas_pendientes";
+            "estrategia;escenario;tamano;capacidad;repeticion;semilla;"
+            + "fallas_planificadas;inyecciones_exitosas;valida;"
+            + "utilidad_sana;utilidad_post_falla_r1;perdida_inicial;"
+            + "t_ajuste_ms;t_estab_ms;rondas_ajuste;rondas_estab;rondas_total;"
+            + "utilidad_final;utilidad_acum;perdida_acum;"
+            + "problemas_final;problemas_acum;"
+            + "reparaciones_ejecutadas;reparaciones_diferidas;"
+            + "t_plan_ms;n_planificaciones";
 
     private final BufferedWriter writer;
 
@@ -60,7 +99,6 @@ public class MetricsCollector {
             carpeta.mkdirs();
         }
 
-        // CREATE_NEW falla (FileAlreadyExistsException) si el archivo existe.
         this.writer = Files.newBufferedWriter(
                 archivo.toPath(),
                 StandardCharsets.UTF_8,
@@ -74,46 +112,38 @@ public class MetricsCollector {
 
     /**
      * Registra una repetición del experimento.
-     *
-     * v3: nuevo parámetro problemasPendientes.
      */
-    public void record(
-            String estrategia,
-            String cf,
-            int fallasPorRonda,
-            int repeticion,
-            long tAjusteMs,
-            long tEstabMs,
-            int rondasAjuste,
-            int rondasEstab,
-            int rondasTotal,
-            double utilidadSana,
-            double utilidadFinal,
-            double utilidadAcum,
-            double utilidadAcumPostFalla,
-            double tPlanMs,
-            int nPlanificaciones,
-            int problemasPendientes) {
+    public void record(Fila f) {
 
         String fila = String.format(
                 Locale.ROOT,
-                "%s;%s;%d;%d;%d;%d;%d;%d;%d;%.6f;%.6f;%.6f;%.6f;%.3f;%d;%d",
-                estrategia,
-                cf,
-                fallasPorRonda,
-                repeticion,
-                tAjusteMs,
-                tEstabMs,
-                rondasAjuste,
-                rondasEstab,
-                rondasTotal,
-                utilidadSana,
-                utilidadFinal,
-                utilidadAcum,
-                utilidadAcumPostFalla,
-                tPlanMs,
-                nPlanificaciones,
-                problemasPendientes);
+                "%s;%s;%d;%.1f;%d;%d;%d;%d;%d;%.6f;%.6f;%.6f;%d;%d;%d;%d;%d;%.6f;%.6f;%.6f;%d;%d;%d;%d;%.3f;%d",
+                f.estrategia,
+                f.escenario,
+                f.tamano,
+                f.capacidad,
+                f.repeticion,
+                f.semilla,
+                f.fallasPlanificadas,
+                f.inyeccionesExitosas,
+                f.valida,
+                f.utilidadSana,
+                f.utilidadPostFallaR1,
+                f.perdidaInicial,
+                f.tAjusteMs,
+                f.tEstabMs,
+                f.rondasAjuste,
+                f.rondasEstab,
+                f.rondasTotal,
+                f.utilidadFinal,
+                f.utilidadAcum,
+                f.perdidaAcum,
+                f.problemasFinal,
+                f.problemasAcum,
+                f.reparacionesEjecutadas,
+                f.reparacionesDiferidas,
+                f.tPlanMs,
+                f.nPlanificaciones);
 
         try {
             this.writer.write(fila);
