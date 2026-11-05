@@ -32,6 +32,9 @@ import java.util.Locale;
  *   utilidad_final            utilidad de cierre de la última ronda
  *   utilidad_acum             suma de la utilidad de cierre de cada ronda
  *   perdida_acum              suma de (utilidad_sana - utilidad de cierre) por ronda
+ *   perdida_residual          utilidad_sana - utilidad_final (daño que queda al terminar)
+ *   recuperacion_completa     1 si al terminar la utilidad es la sana y no quedan
+ *                             problemas de validación, 0 si queda daño residual
  *   problemas_final           problemas de validación al cierre de la última ronda
  *   problemas_acum            suma de los problemas de validación por ronda
  *   reparaciones_ejecutadas   estrategias ejecutadas en total
@@ -65,6 +68,8 @@ public class MetricsCollector {
         public double utilidadFinal;
         public double utilidadAcum;
         public double perdidaAcum;
+        public double perdidaResidual;
+        public int recuperacionCompleta;
         public int problemasFinal;
         public int problemasAcum;
         public int reparacionesEjecutadas;
@@ -79,6 +84,7 @@ public class MetricsCollector {
             + "utilidad_sana;utilidad_post_falla_r1;perdida_inicial;"
             + "t_ajuste_ms;t_estab_ms;rondas_ajuste;rondas_estab;rondas_total;"
             + "utilidad_final;utilidad_acum;perdida_acum;"
+            + "perdida_residual;recuperacion_completa;"
             + "problemas_final;problemas_acum;"
             + "reparaciones_ejecutadas;reparaciones_diferidas;"
             + "t_plan_ms;n_planificaciones";
@@ -117,7 +123,7 @@ public class MetricsCollector {
 
         String fila = String.format(
                 Locale.ROOT,
-                "%s;%s;%d;%.1f;%d;%d;%d;%d;%d;%.6f;%.6f;%.6f;%d;%d;%d;%d;%d;%.6f;%.6f;%.6f;%d;%d;%d;%d;%.3f;%d",
+                "%s;%s;%d;%.1f;%d;%d;%d;%d;%d;%.6f;%.6f;%.6f;%d;%d;%d;%d;%d;%.6f;%.6f;%.6f;%.6f;%d;%d;%d;%d;%d;%.3f;%d",
                 f.estrategia,
                 f.escenario,
                 f.tamano,
@@ -138,6 +144,8 @@ public class MetricsCollector {
                 f.utilidadFinal,
                 f.utilidadAcum,
                 f.perdidaAcum,
+                f.perdidaResidual,
+                f.recuperacionCompleta,
                 f.problemasFinal,
                 f.problemasAcum,
                 f.reparacionesEjecutadas,

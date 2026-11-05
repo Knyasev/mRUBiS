@@ -1,0 +1,24 @@
+
+===== [DIAG] MODELO =====
+[DIAG] tenants=1
+[DIAG] tenant 0: componentes=18 elegibles(STARTED, no filtro)=8
+[DIAG] componentes totales=18 | elegibles como objetivo=8
+[DIAG] umbrales v3: ajuste=0.50 estab=0.95 (sobre pérdida inicial)
+
+===== [DIAG] estrategia=STATIC escenario=MIXTO k=6 capacidad=40 semilla=1050044 utilidadSana=31.6714 =====
+[DIAG] ronda=1 uPre=13.4436 uCierre=25.4162 problemas=7 issuesDetectados=6 ejecuta=[LwRedeployComponent, LwRedeployComponent, RestartComponent, HwRedeployComponent]
+[DIAG] ronda=2 uPre=25.4162 uCierre=31.6714 problemas=0 issuesDetectados=2 ejecuta=[HwRedeployComponent, RecreateConnector]
+[DIAG] ronda=3 uPre=31.6714 uCierre=31.6714 problemas=0 issuesDetectados=0 ejecuta=[]
+[DIAG] ronda=4 uPre=31.6714 uCierre=31.6714 problemas=0 issuesDetectados=0 ejecuta=[]
+
+===== [DIAG] estrategia=UTILITY_DRIVEN escenario=MIXTO k=6 capacidad=40 semilla=1050044 utilidadSana=31.6714 =====
+[DIAG] ronda=1 uPre=13.4436 uCierre=22.3705 problemas=7 issuesDetectados=6 ejecuta=[RestartComponent, LwRedeployComponent, LwRedeployComponent, RecreateConnector]
+[DIAG] ronda=2 uPre=22.3705 uCierre=31.6714 problemas=0 issuesDetectados=2 ejecuta=[HwRedeployComponent, HwRedeployComponent]
+[DIAG] ronda=3 uPre=31.6714 uCierre=31.6714 problemas=0 issuesDetectados=0 ejecuta=[]
+[DIAG] ronda=4 uPre=31.6714 uCierre=31.6714 problemas=0 issuesDetectados=0 ejecuta=[]
+
+===== [DIAG] estrategia=SOLVER escenario=MIXTO k=6 capacidad=40 semilla=1050044 utilidadSana=31.6714 =====
+[DIAG] ronda=1 uPre=13.4436 uCierre=25.4162 problemas=7 issuesDetectados=6 ejecuta=[LwRedeployComponent, LwRedeployComponent, RestartComponent, HwRedeployComponent]
+[DIAG] ronda=2 uPre=25.4162 uCierre=31.6714 problemas=0 issuesDetectados=2 ejecuta=[HwRedeployComponent, RecreateConnector]
+[DIAG] ronda=3 uPre=31.6714 uCierre=31.6714 problemas=0 issuesDetectados=0 ejecuta=[]
+[DIAG] ronda=4 uPre=31.6714 uCierre=31.6714 problemas=0 issuesDetectados=0 ejecuta=[]

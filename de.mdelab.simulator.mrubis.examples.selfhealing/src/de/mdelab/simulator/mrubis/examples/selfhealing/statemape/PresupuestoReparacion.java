@@ -10,9 +10,9 @@ import de.mdelab.comparch.Annotations;
 import de.mdelab.comparch.Architecture;
 
 /**
- * Presupuesto de reparación COMÚN a las tres estrategias (versión 3).
+ * Presupuesto de reparacion comun a las tres estrategias (v3).
  *
- * Tras la fase Plan, recorre las estrategias de adaptación anotadas en el
+ * Tras la fase Plan, recorre las estrategias de adaptacionn anotadas en el
  * modelo EN EL ORDEN EN QUE LAS PLANIFICÓ cada planificador y conserva solo
  * las que caben en la capacidad de la ronda (se omiten las que no caben y se
  * sigue con las siguientes). Las descartadas se eliminan del modelo, de modo
@@ -28,7 +28,7 @@ import de.mdelab.comparch.Architecture;
  * Los costos estimados (en la unidad de la capacidad) COINCIDEN con
  * SolverPlan.getCost(); si se modifica uno, hay que modificar el otro.
  *
- * Contribución técnica original –
+ * Contribucion tecnica original –
  * Wilson Israel Gonzalez Armijos
  */
 public final class PresupuestoReparacion {
@@ -63,10 +63,10 @@ public final class PresupuestoReparacion {
 	 * Recorta las estrategias planificadas a la capacidad dada.
 	 *
 	 * @param architecture
-	 *            raíz del modelo
+	 *            rai�z del modelo
 	 * @param capacidad
 	 *            capacidad de reparación de la ronda
-	 * @return número de estrategias descartadas
+	 * @return numero de estrategias descartadas
 	 */
 	public static int aplicar(Architecture architecture, double capacidad) {
 		Annotations annotations = architecture.getAnnotations();

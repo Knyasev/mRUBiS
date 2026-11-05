@@ -9,22 +9,38 @@ import de.mdelab.comparch.Annotations;
 import de.mdelab.comparch.Architecture;
 import de.mdelab.comparch.ComparchFactory;
 import de.mdelab.comparch.Component;
-import de.mdelab.comparch.ComponentState;
 import de.mdelab.comparch.ComponentType;
 import de.mdelab.comparch.Impact;
 import de.mdelab.comparch.InputParameter;
 import de.mdelab.comparch.Issue;
-import de.mdelab.comparch.ProvidedInterface;
 import de.mdelab.comparch.RequiredInterface;
 import de.mdelab.comparch.Tenant;
 import de.mdelab.simulator.mrubis.utility.MRubisSelfHealingUtilityFunction;
 
 /**
- * Utility-Driven planning activity.
- * Prioritizes repair actions by their estimated utility gain,
- * processing higher-impact issues first.
+ * Utility-Driven planning activity (versión 3, variante B).
  *
- * Contribution técnica original – Wilson Israel Gonzalez Armjos, 2025
+ * Prioriza las reparaciones por su RAZÓN utilidad estimada / costo estimado
+ * (densidad de utilidad), en orden descendente. Es el criterio voraz estándar
+ * del problema de la mochila y aproxima la selección que hace SolverPlan con
+ * la misma utilidad y el mismo costo estimados.
+ *
+ * Con los valores estimados vigentes, el orden resultante es:
+ *   CF2 (0.6 / 5 = 0.1200), CF1 (0.9 / 8 = 0.1125),
+ *   CF5 (0.8 / 10 = 0.0800), CF3 (1.0 / 15 = 0.0667).
+ *
+ * La capacidad de reparación por ronda NO se aplica aquí: se aplica de forma
+ * común a las tres estrategias en PresupuestoReparacion, después de la fase
+ * Plan. El tope MAX_REPAIRS_PER_CYCLE es un límite técnico independiente.
+ *
+ * Las utilidades y los costos estimados son supuestos de diseño del autor y
+ * coinciden con SolverPlan y PresupuestoReparacion; si se modifica uno, hay
+ * que modificar los otros dos.
+ *
+ * Historial: en las versiones v1 y v2 esta estrategia ordenaba solo por la
+ * utilidad estimada del tipo de falla, sin considerar el costo.
+ *
+ * Contribución técnica original – Wilson Israel Gonzalez Armijos, 2025
  */
 public class UtilityDrivenPlan {
 
@@ -41,8 +57,8 @@ public class UtilityDrivenPlan {
     }
 
     /**
-     * Plans adaptations driven by estimated utility gain.
-     * Issues are sorted by utility delta (descending) before planning.
+     * Plans adaptations driven by the estimated utility per unit of cost.
+     * Issues are sorted by that ratio (descending) before planning.
      *
      * @param architecture root element of the model
      */
@@ -54,14 +70,14 @@ public class UtilityDrivenPlan {
             return;
         }
 
-        // 1. Score each issue by estimated utility gain
+        // 1. Score each issue by estimated utility gain per unit of cost
         List<ScoredIssue> scoredIssues = new ArrayList<>();
         for (Issue issue : issues) {
-            double delta = estimateUtilityGain(issue, architecture);
-            scoredIssues.add(new ScoredIssue(issue, delta));
+            double ratio = estimateUtilityPerCost(issue);
+            scoredIssues.add(new ScoredIssue(issue, ratio));
         }
 
-        // 2. Sort descending by utility gain (highest impact first)
+        // 2. Sort descending by ratio (stable: ties keep the detection order)
         scoredIssues.sort(Comparator.comparingDouble(ScoredIssue::getDelta).reversed());
 
         // 3. Plan only the top MAX_REPAIRS_PER_CYCLE issues
@@ -81,36 +97,54 @@ public class UtilityDrivenPlan {
     }
 
     /**
-     * Estimates the utility gain of repairing a given issue.
-     * Uses a heuristic based on issue type and affected element state.
-     *
-     * @param issue        the issue to evaluate
-     * @param architecture the current architecture model
-     * @return estimated utility delta [0.0 – 1.0]
+     * Estimated utility gain of repairing the issue (design assumption).
+     * Same values as SolverPlan.getUtility().
      */
-    private double estimateUtilityGain(Issue issue, Architecture architecture) {
-        switch (issue.getType()) {
-            case "CF1":
-                // Unknown-state components block all dependent services  high impact
-                return 0.9;
-            case "CF2":
-                // Exception-throwing components degrade quality but still serve  medium
-                return 0.6;
+    static double estimatedUtility(String issueType) {
+        switch (issueType) {
             case "CF3":
-                // Missing components block a tenant entirely very high impact
                 return 1.0;
+            case "CF1":
+                return 0.9;
             case "CF5":
-                // Broken connectors isolate components  high impact
                 return 0.8;
+            case "CF2":
+                return 0.6;
             default:
                 return 0.1;
         }
     }
 
     /**
+     * Estimated cost of repairing the issue (design assumption).
+     * Same values as SolverPlan.getCost() and PresupuestoReparacion.costo().
+     */
+    static double estimatedCost(String issueType) {
+        switch (issueType) {
+            case "CF2":
+                return 5.0;
+            case "CF1":
+                return 8.0;
+            case "CF5":
+                return 10.0;
+            case "CF3":
+                return 15.0;
+            default:
+                return 20.0;
+        }
+    }
+
+    /**
+     * Estimated utility per unit of cost (utility density) of an issue.
+     */
+    private double estimateUtilityPerCost(Issue issue) {
+        String type = issue.getType();
+        return estimatedUtility(type) / estimatedCost(type);
+    }
+
+    /**
      * Creates the appropriate AdaptationStrategy for a given issue,
-     * using the same action mapping as the StaticPlanner but applied
-     * only to high-priority issues selected by utility scoring.
+     * using the same action mapping as the StaticPlanner.
      */
     private AdaptationStrategy createStrategy(Issue issue) {
         List<Impact> impacts = issue.getImpacts();

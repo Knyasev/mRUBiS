@@ -16,37 +16,39 @@ import de.mdelab.simulator.mrubis.utility.MRubisSelfHealingUtilityFunction;
 
 
 /**
- * Feedback loop MAPE-K instrumentado para experimentación.
+ * Feedback loop MAPE-K instrumentado para experimentacion.
  *
- * VERSIÓN 3: escenarios de ráfaga, presupuesto de reparación común y métricas
- * sobre la pérdida de utilidad.
+ * VERSION 3: escenarios de rafaga, presupuesto de reparación comun y metricas
+ * sobre la perdida de utilidad.
  *
  * HISTORIAL
- *  v1  Diseño factorial 3 estrategias x CF1,CF2,CF3,CF5 x 30 repeticiones,
+ *  v1  Disenio factorial 3 estrategias x CF1,CF2,CF3,CF5 x 30 repeticiones,
  *      una falla por ronda; T_ajuste y T_estab con umbrales sobre la
  *      utilidad total y utilidad medida dentro de run().
  *  v2  Se agregan utilidad acumulada, utilidad post-falla, tiempo de la fase
  *      Plan y conteo de rondas.
- *  v3  - La utilidad de cierre de ronda se mide DESPUÉS de validateModel()
- *        (en v1/v2 se medía antes, y el efecto del reinicio de CF2, que lo
+ *  v3  - La utilidad de cierre de ronda se mide DESPUES de validateModel()
+ *        (en v1/v2 se media antes, y el efecto del reinicio de CF2, que lo
  *        aplica un validador, quedaba sin reflejarse).
- *      - Escenario de ráfaga (BurstScenario): k fallas simultáneas en la
+ *      - Escenario de rafaga (BurstScenario): k fallas simultaneas en la
  *        ronda 1, con semilla (diseño pareado entre estrategias).
- *      - Presupuesto de reparación común (PresupuestoReparacion).
+ *      - Presupuesto de reparacion comun (PresupuestoReparacion).
  *      - T_ajuste y T_estab se definen sobre la pérdida inicial de utilidad.
  *      - Traza por ronda y registro de inyecciones y de problemas de
- *        validación.
+ *        validacion.
  *
  * DEFINICIONES (v3)
- *  perdida_inicial = utilidad_sana - utilidad medida justo tras la ráfaga.
+ *  perdida_inicial = utilidad_sana - utilidad medida justo tras la rafaga.
  *  T_ajuste: tiempo hasta la primera ronda de cierre en que se ha
- *            recuperado al menos FRACCION_RECUPERACION_AJUSTE de la pérdida
+ *            recuperado al menos FRACCION_RECUPERACION_AJUSTE de la perdida
  *            inicial.
  *  T_estab:  tiempo hasta la ronda en que se completan CICLOS_ESTABLES rondas
  *            consecutivas con al menos FRACCION_RECUPERACION_ESTAB de la
  *            pérdida inicial recuperada.
- *  Si la ráfaga no produce pérdida (perdida_inicial <= 0), la repetición se
- *  marca como no válida y ambos tiempos quedan en -1.
+ *  Si la rafaga no produce perdida (perdida_inicial <= 0), la repeticion se
+ *  marca como no valida y ambos tiempos quedan en -1.
+ *  recuperacion_completa: al terminar, utilidad igual a la sana y sin problemas
+ *  de validacion. T_estab no la garantiza (basta con el 95 % de la perdida).
  *
  * Contribución técnica original –
  * Wilson Israel Gonzalez Armijos
@@ -77,7 +79,7 @@ public class StateBasedMapeFeedbackLoop {
     // Se fijan ANTES de ejecutar el experimento y no se modifican después.
     public static final double FRACCION_RECUPERACION_AJUSTE = 0.50;
 
-    public static final double FRACCION_RECUPERACION_ESTAB = 0.90;
+    public static final double FRACCION_RECUPERACION_ESTAB = 0.95;
 
     private static final int CICLOS_ESTABLES = 3;
 
@@ -585,6 +587,20 @@ public class StateBasedMapeFeedbackLoop {
 
     public double getPerdidaAcumulada(){ return perdidaAcumulada; }
 
+    /** Daño que queda al terminar: utilidad sana menos utilidad final. */
+    public double getPerdidaResidual(){ return utilidadSana - utilidadFinal; }
+
+    /**
+     * true si al terminar la utilidad es la del sistema sano y no quedan
+     * problemas de validación (recuperación completa).
+     */
+    public boolean esRecuperacionCompleta(){
+
+        return esValida()
+                && Math.abs(utilidadSana - utilidadFinal) <= 1e-6
+                && problemasFinal == 0;
+    }
+
     public int getProblemasFinal(){ return problemasFinal; }
 
     public int getProblemasAcumulados(){ return problemasAcumulados; }
@@ -614,40 +630,218 @@ public class StateBasedMapeFeedbackLoop {
     //   estrategia x escenario x tamaño de ráfaga x capacidad x repetición
     // ---------------------------------------------------------------
 
-    // true: corrida piloto corta (1 repetición, tamaño 6). false: diseño completo.
-    private static final boolean PILOTO = true;
+    // true: corrida piloto corta (1 repetición, tamaños grandes). false: diseño completo.
+    private static final boolean PILOTO = false;
+
+    // Repeticiones de calentamiento por estrategia, NO registradas, para que
+    // la carga de clases, la compilación JIT y el primer uso de CPLEX no
+    // contaminen las primeras mediciones.
+    private static final boolean CALENTAMIENTO = true;
+
+    private static final int REPETICIONES_CALENTAMIENTO = 2;
+
+    private static final String MODEL_URI = "./model/mRUBiS.comparch";
+
+    private static final int EXCEPTION_THRESHOLD = 5;
+
+    private static final int MIN_PIPE_SIZE = 4;
+
+    private static final int ROUNDS = 20;
+
+    private static final long INJECTION_DELAY_MS = 100;
+
+
+    /** Resultado de una repetición. */
+    private static class Resultado {
+
+        MetricsCollector.Fila fila;
+
+        List<RondaTraza> traza;
+    }
+
+
+    /**
+     * Tamaños de ráfaga por escenario. El modelo tiene 1 tenant y 8
+     * componentes elegibles como objetivo, por lo que las ráfagas no pueden
+     * superar ese número de objetivos distintos; CF2 admite como máximo 4
+     * (interfaces usadas por componentes que siguen STARTED).
+     */
+    private static int[] tamanosPara(Perfil perfil) {
+
+        if (PILOTO) {
+
+            switch (perfil) {
+            case CF2:
+                return new int[] { 4 };
+            case MIXTO:
+                return new int[] { 8 };
+            default:
+                return new int[] { 6 };
+            }
+        }
+
+        switch (perfil) {
+        case CF2:
+            return new int[] { 2, 4 };
+        case MIXTO:
+            return new int[] { 2, 4, 6, 8 };
+        default:
+            return new int[] { 2, 4, 6 };
+        }
+    }
+
+
+    /** Misma semilla para las tres estrategias y para todas las capacidades. */
+    private static long calcularSemilla(int rep, Perfil escenario, int tamano) {
+
+        return 1_000_003L * rep
+                + 10_007L * (escenario.ordinal() + 1)
+                + tamano;
+    }
+
+
+    private static Resultado ejecutarRepeticion(
+            PlanningStrategy strategy,
+            Perfil escenario,
+            int tamano,
+            double capacidad,
+            int rep,
+            long semilla) {
+
+
+        Architecture architecture =
+                SelfHealingConfig
+                .loadModel(MODEL_URI);
+
+
+        MRubisSelfHealingUtilityFunction utilityFunction =
+                new MRubisSelfHealingUtilityFunction(
+                        EXCEPTION_THRESHOLD);
+
+
+        double utilidadSana =
+                utilityFunction.computeUtility(
+                        architecture);
+
+
+        BurstScenario scenario =
+                new BurstScenario(
+                        architecture,
+                        EXCEPTION_THRESHOLD,
+                        escenario,
+                        tamano,
+                        semilla);
+
+
+        Simulator simulator =
+                Simulator.FACTORY.createSimulator(
+                        architecture,
+                        utilityFunction,
+                        scenario,
+                        ROUNDS,
+                        INJECTION_DELAY_MS,
+                        false,
+                        Level.WARNING,
+                        false);
+
+
+        SelfHealingConfig.addValidators(
+                simulator,
+                EXCEPTION_THRESHOLD,
+                MIN_PIPE_SIZE);
+
+
+        StateBasedMapeFeedbackLoop loop =
+                new StateBasedMapeFeedbackLoop(
+                        EXCEPTION_THRESHOLD,
+                        strategy,
+                        utilidadSana,
+                        capacidad);
+
+
+        // Marca el instante de la falla UNA sola vez.
+        loop.registrarFalla();
+
+
+        do{
+
+
+            simulator.injectIssues();
+
+
+            loop.run(architecture);
+
+
+            int problemas =
+                    simulator.validateModel();
+
+
+            loop.cerrarRonda(
+                    architecture,
+                    problemas);
+
+
+        }while(!simulator.isSimulationCompleted());
+
+
+        MetricsCollector.Fila f =
+                new MetricsCollector.Fila();
+
+        f.estrategia = strategy.name();
+        f.escenario = escenario.name();
+        f.tamano = tamano;
+        f.capacidad = capacidad;
+        f.repeticion = rep;
+        f.semilla = semilla;
+        f.fallasPlanificadas = scenario.getFallasPlanificadas();
+        f.inyeccionesExitosas = scenario.getInyeccionesExitosas();
+        f.valida = loop.esValida() ? 1 : 0;
+        f.utilidadSana = utilidadSana;
+        f.utilidadPostFallaR1 = loop.getUtilidadPostFallaR1();
+        f.perdidaInicial = loop.getPerdidaInicial();
+        f.tAjusteMs = loop.getTAjusteMs();
+        f.tEstabMs = loop.getTEstabMs();
+        f.rondasAjuste = loop.getRondasAjuste();
+        f.rondasEstab = loop.getRondasEstab();
+        f.rondasTotal = loop.getRondas();
+        f.utilidadFinal = loop.getUtilidadFinal();
+        f.utilidadAcum = loop.getUtilidadAcumulada();
+        f.perdidaAcum = loop.getPerdidaAcumulada();
+        f.perdidaResidual = loop.getPerdidaResidual();
+        f.recuperacionCompleta = loop.esRecuperacionCompleta() ? 1 : 0;
+        f.problemasFinal = loop.getProblemasFinal();
+        f.problemasAcum = loop.getProblemasAcumulados();
+        f.reparacionesEjecutadas = loop.getReparacionesEjecutadas();
+        f.reparacionesDiferidas = loop.getReparacionesDiferidas();
+        f.tPlanMs = loop.getTPlanMs();
+        f.nPlanificaciones = loop.getPlanificaciones();
+
+
+        Resultado resultado = new Resultado();
+
+        resultado.fila = f;
+
+        resultado.traza = loop.getTraza();
+
+
+        // Libera el FileHandler de Simulator.log.
+        LogManager.getLogManager().reset();
+
+
+        return resultado;
+    }
 
 
     public static void main(String[] args)
             throws IOException {
 
 
-
-        String modelURI =
-                "./model/mRUBiS.comparch";
-
-
-        int exceptionThreshold = 5;
-
-
-        int minPipeSize = 4;
-
-
-        int rounds = 20;
-
-
-        long injectionDelayMS = 100;
-
-
         int repeticiones =
                 PILOTO ? 1 : 30;
 
 
-        int[] tamanos =
-                PILOTO ? new int[] { 6 } : new int[] { 2, 6, 12 };
-
-
-        // Para el análisis de sensibilidad agregar 80.0 (o ejecutar aparte).
+        // Para el análisis de sensibilidad agregar otra capacidad (p. ej. 20.0)
+        // o ejecutar aparte; el nombre de los CSV incluye las capacidades.
         double[] capacidades =
                 new double[] { 40.0 };
 
@@ -669,8 +863,18 @@ public class StateBasedMapeFeedbackLoop {
         };
 
 
+        // El sufijo identifica la configuración, para no mezclar corridas.
+        String textoCapacidades = "";
+
+        for (double c : capacidades) {
+
+            textoCapacidades +=
+                    (textoCapacidades.isEmpty() ? "" : "-")
+                    + (int) c;
+        }
+
         String sufijo =
-                "_v3_delay" + injectionDelayMS
+                "_v3" + textoCapacidades
                 + (PILOTO ? "_piloto" : "");
 
 
@@ -682,140 +886,61 @@ public class StateBasedMapeFeedbackLoop {
                 new TrazaRondas("./results/traza" + sufijo + ".csv");
 
 
+        if (CALENTAMIENTO) {
+
+            for (PlanningStrategy strategy : estrategias) {
+
+                for (int w = 1; w <= REPETICIONES_CALENTAMIENTO; w++) {
+
+                    ejecutarRepeticion(
+                            strategy,
+                            Perfil.MIXTO,
+                            6,
+                            capacidades[0],
+                            0,
+                            calcularSemilla(0, Perfil.MIXTO, 6));
+                }
+            }
+
+            System.out.println("Calentamiento terminado (no registrado).");
+        }
+
 
         for (Perfil escenario : escenarios) {
 
-            for (int tamano : tamanos) {
+            for (int tamano : tamanosPara(escenario)) {
 
                 for (double capacidad : capacidades) {
 
                     for (int rep = 1; rep <= repeticiones; rep++) {
 
-                        // Misma semilla para las tres estrategias (y para
-                        // todas las capacidades): diseño pareado.
                         long semilla =
-                                1_000_003L * rep
-                                + 10_007L * (escenario.ordinal() + 1)
-                                + tamano;
+                                calcularSemilla(rep, escenario, tamano);
 
                         for (int i = 0; i < estrategias.length; i++) {
 
                             // Se rota el orden de las estrategias en cada
-                            // repetición para repartir efectos de arranque.
+                            // repetición para repartir efectos de orden.
                             PlanningStrategy strategy =
                                     estrategias[(i + rep) % estrategias.length];
 
 
-                            Architecture architecture =
-                                    SelfHealingConfig
-                                    .loadModel(modelURI);
-
-
-                            MRubisSelfHealingUtilityFunction utilityFunction =
-                                    new MRubisSelfHealingUtilityFunction(
-                                            exceptionThreshold);
-
-
-                            double utilidadSana =
-                                    utilityFunction.computeUtility(
-                                            architecture);
-
-
-                            BurstScenario scenario =
-                                    new BurstScenario(
-                                            architecture,
-                                            exceptionThreshold,
+                            Resultado r =
+                                    ejecutarRepeticion(
+                                            strategy,
                                             escenario,
                                             tamano,
+                                            capacidad,
+                                            rep,
                                             semilla);
 
 
-                            Simulator simulator =
-                                    Simulator.FACTORY.createSimulator(
-                                            architecture,
-                                            utilityFunction,
-                                            scenario,
-                                            rounds,
-                                            injectionDelayMS,
-                                            false,
-                                            Level.WARNING,
-                                            false);
-
-
-                            SelfHealingConfig.addValidators(
-                                    simulator,
-                                    exceptionThreshold,
-                                    minPipeSize);
-
-
-                            StateBasedMapeFeedbackLoop loop =
-                                    new StateBasedMapeFeedbackLoop(
-                                            exceptionThreshold,
-                                            strategy,
-                                            utilidadSana,
-                                            capacidad);
-
-
-                            // Marca el instante de la falla UNA sola vez.
-                            loop.registrarFalla();
-
-
-                            do{
-
-
-                                simulator.injectIssues();
-
-
-                                loop.run(architecture);
-
-
-                                int problemas =
-                                        simulator.validateModel();
-
-
-                                loop.cerrarRonda(
-                                        architecture,
-                                        problemas);
-
-
-                            }while(!simulator.isSimulationCompleted());
-
-
-
-                            MetricsCollector.Fila f =
-                                    new MetricsCollector.Fila();
-
-                            f.estrategia = strategy.name();
-                            f.escenario = escenario.name();
-                            f.tamano = tamano;
-                            f.capacidad = capacidad;
-                            f.repeticion = rep;
-                            f.semilla = semilla;
-                            f.fallasPlanificadas = scenario.getFallasPlanificadas();
-                            f.inyeccionesExitosas = scenario.getInyeccionesExitosas();
-                            f.valida = loop.esValida() ? 1 : 0;
-                            f.utilidadSana = utilidadSana;
-                            f.utilidadPostFallaR1 = loop.getUtilidadPostFallaR1();
-                            f.perdidaInicial = loop.getPerdidaInicial();
-                            f.tAjusteMs = loop.getTAjusteMs();
-                            f.tEstabMs = loop.getTEstabMs();
-                            f.rondasAjuste = loop.getRondasAjuste();
-                            f.rondasEstab = loop.getRondasEstab();
-                            f.rondasTotal = loop.getRondas();
-                            f.utilidadFinal = loop.getUtilidadFinal();
-                            f.utilidadAcum = loop.getUtilidadAcumulada();
-                            f.perdidaAcum = loop.getPerdidaAcumulada();
-                            f.problemasFinal = loop.getProblemasFinal();
-                            f.problemasAcum = loop.getProblemasAcumulados();
-                            f.reparacionesEjecutadas = loop.getReparacionesEjecutadas();
-                            f.reparacionesDiferidas = loop.getReparacionesDiferidas();
-                            f.tPlanMs = loop.getTPlanMs();
-                            f.nPlanificaciones = loop.getPlanificaciones();
+                            MetricsCollector.Fila f = r.fila;
 
                             metrics.record(f);
 
 
-                            for (RondaTraza r : loop.getTraza()) {
+                            for (RondaTraza ronda : r.traza) {
 
                                 trazaCsv.record(
                                         strategy.name(),
@@ -823,16 +948,12 @@ public class StateBasedMapeFeedbackLoop {
                                         tamano,
                                         capacidad,
                                         rep,
-                                        r);
+                                        ronda);
                             }
 
 
-                            // Libera el FileHandler de Simulator.log.
-                            LogManager.getLogManager().reset();
-
-
                             System.out.printf(
-                                    "[v3][%s][%s][k=%d][cap=%.0f][rep %d] valida=%d inyecciones=%d/%d perdida0=%.3f Tajuste=%d ms Testab=%d ms rondasEstab=%d UtilFinal=%.3f problemas=%d TPlan=%.2f ms%n",
+                                    "[v3][%s][%s][k=%d][cap=%.0f][rep %d] valida=%d iny=%d/%d perdida0=%.3f Tajuste=%d ms Testab=%d ms rondasEstab=%d completa=%d residual=%.3f problemas=%d TPlan=%.2f ms%n",
                                     strategy.name(),
                                     escenario.name(),
                                     tamano,
@@ -845,7 +966,8 @@ public class StateBasedMapeFeedbackLoop {
                                     f.tAjusteMs,
                                     f.tEstabMs,
                                     f.rondasEstab,
-                                    f.utilidadFinal,
+                                    f.recuperacionCompleta,
+                                    f.perdidaResidual,
                                     f.problemasFinal,
                                     f.tPlanMs
                             );
