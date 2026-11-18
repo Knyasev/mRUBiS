@@ -1,0 +1,1 @@
+    "perdida_acum": "todas",

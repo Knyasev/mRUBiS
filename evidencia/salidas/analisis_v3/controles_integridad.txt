@@ -1,0 +1,85 @@
+Archivo: C:\Users\HP-User\Desktop\Wilson Gonzalez\8 Ciclo\mRUBiS\evidencia\datasets\experimento_v3.csv
+Filas: 1350
+Filas esperadas (referencia): 1350
+Coincide con total esperado: True
+Duplicados por ['estrategia', 'escenario', 'tamano', 'repeticion']: 0
+Filas completamente duplicadas: 0
+
+Conversiones numéricas fallidas:
+  Ninguna
+
+Valores faltantes por columna:
+  Ninguno
+
+Estrategias desconocidas: []
+Escenarios desconocidos: []
+
+Condiciones escenario/tamaño detectadas: 15
+[('CF1', 2), ('CF1', 4), ('CF1', 6), ('CF2', 2), ('CF2', 4), ('CF3', 2), ('CF3', 4), ('CF3', 6), ('CF5', 2), ('CF5', 4), ('CF5', 6), ('MIXTO', 2), ('MIXTO', 4), ('MIXTO', 6), ('MIXTO', 8)]
+Celdas estrategia/condición esperadas: 45
+Celdas con n distinto de 30: 0
+
+Conteos por celda:
+estrategia      escenario  tamano
+STATIC          CF1        2         30
+                           4         30
+                           6         30
+                CF2        2         30
+                           4         30
+                CF3        2         30
+                           4         30
+                           6         30
+                CF5        2         30
+                           4         30
+                           6         30
+                MIXTO      2         30
+                           4         30
+                           6         30
+                           8         30
+UTILITY_DRIVEN  CF1        2         30
+                           4         30
+                           6         30
+                CF2        2         30
+                           4         30
+                CF3        2         30
+                           4         30
+                           6         30
+                CF5        2         30
+                           4         30
+                           6         30
+                MIXTO      2         30
+                           4         30
+                           6         30
+                           8         30
+SOLVER          CF1        2         30
+                           4         30
+                           6         30
+                CF2        2         30
+                           4         30
+                CF3        2         30
+                           4         30
+                           6         30
+                CF5        2         30
+                           4         30
+                           6         30
+                MIXTO      2         30
+                           4         30
+                           6         30
+                           8         30
+
+Bloques con semillas distintas entre estrategias: 0
+Bloques sin las tres estrategias: 0
+Valores de rondas_total: [20]
+Valores de capacidad: [40.0]
+Valores de valida: {1: 1350}
+Pérdida inicial <= 0: 0
+n_planificaciones <= 0: 0
+t_ajuste_ms = -1: 0
+t_ajuste_ms < -1: 0
+t_estab_ms = -1: 1
+t_estab_ms < -1: 0
+
+NOTAS:
+- Las estadísticas de tiempos excluyen valores negativos (-1) y NaN; las tasas conservan el denominador completo.
+- La ausencia de estabilización se cuenta por marcador -1; comprobar en trazas su causa.
+- Las celdas se detectan del CSV, por lo que el control de diseño debe contrastarse con el protocolo OE1.
