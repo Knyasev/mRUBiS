@@ -1,0 +1,76 @@
+metrica;escenario;tamano;n_bloques;bloques_excluidos;chi2_friedman;p_friedman;p_friedman_bonferroni;n_contrastes_familia;significativo_bonferroni;estado
+t_ajuste_ms;CF1;2;30;0;9.983050847457624;0.006795290884209218;0.10192936326313827;15;False;calculada
+t_estab_ms;CF1;2;30;0;2.0508474576271034;0.358644465211064;1.0;15;False;calculada
+utilidad_acum;CF1;2;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;CF1;2;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;CF1;2;30;0;46.06666666666666;9.925455200990444e-11;1.4888182801485666e-09;15;True;calculada
+t_ajuste_ms;CF1;4;30;0;6.4310344827585935;0.040134569193996744;0.6020185379099512;15;False;calculada
+t_estab_ms;CF1;4;30;0;1.8983050847457705;0.3870689089994754;1.0;15;False;calculada
+utilidad_acum;CF1;4;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;CF1;4;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;CF1;4;30;0;45.06666666666666;1.6364309111254172e-10;2.4546463666881257e-09;15;True;calculada
+t_ajuste_ms;CF1;6;30;0;4.756302521008377;0.0927218376772859;1.0;15;False;calculada
+t_estab_ms;CF1;6;30;0;10.40336134453781;0.005507300670763612;0.08260951006145417;15;False;calculada
+utilidad_acum;CF1;6;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;CF1;6;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;CF1;6;30;0;45.0;1.69189792261513e-10;2.537846883922695e-09;15;True;calculada
+t_ajuste_ms;CF2;2;30;0;0.8305084745762674;0.6601724189220375;1.0;15;False;calculada
+t_estab_ms;CF2;2;30;0;0.15254237288133282;0.9265649006480914;1.0;15;False;calculada
+utilidad_acum;CF2;2;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;CF2;2;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;CF2;2;30;0;46.739495798319346;7.090019733133774e-11;1.063502959970066e-09;15;True;calculada
+t_ajuste_ms;CF2;4;30;0;1.2268907563024942;0.541482041119911;1.0;15;False;calculada
+t_estab_ms;CF2;4;30;0;0.5210084033613293;0.7706629182897657;1.0;15;False;calculada
+utilidad_acum;CF2;4;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;CF2;4;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;CF2;4;30;0;45.0;1.69189792261513e-10;2.537846883922695e-09;15;True;calculada
+t_ajuste_ms;CF3;2;30;0;8.46666666666664;0.014503963336780992;0.21755945005171487;15;False;calculada
+t_estab_ms;CF3;2;30;0;5.899159663865569;0.05236170204222388;0.7854255306333582;15;False;calculada
+utilidad_acum;CF3;2;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;CF3;2;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;CF3;2;30;0;45.06666666666666;1.6364309111254172e-10;2.4546463666881257e-09;15;True;calculada
+t_ajuste_ms;CF3;4;30;0;2.534482758620678;0.28160739924644423;1.0;15;False;calculada
+t_estab_ms;CF3;4;30;0;5.066666666666663;0.07939393227707836;1.0;15;False;calculada
+utilidad_acum;CF3;4;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;CF3;4;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;CF3;4;30;0;45.60000000000002;1.2533888086068226e-10;1.880083212910234e-09;15;True;calculada
+t_ajuste_ms;CF3;6;30;0;10.324786324786322;0.005727975294791937;0.08591962942187906;15;False;calculada
+t_estab_ms;CF3;6;30;0;14.94117647058823;0.0005695931435225024;0.008543897152837536;15;True;calculada
+utilidad_acum;CF3;6;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;CF3;6;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;CF3;6;30;0;45.26666666666665;1.4807039204169627e-10;2.221055880625444e-09;15;True;calculada
+t_ajuste_ms;CF5;2;30;0;4.789473684210538;0.09119667489006575;1.0;15;False;calculada
+t_estab_ms;CF5;2;30;0;4.352941176470584;0.11344120564253259;1.0;15;False;calculada
+utilidad_acum;CF5;2;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;CF5;2;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;CF5;2;30;0;45.60000000000002;1.2533888086068226e-10;1.880083212910234e-09;15;True;calculada
+t_ajuste_ms;CF5;4;30;0;3.6470588235294192;0.16145490331307844;1.0;15;False;calculada
+t_estab_ms;CF5;4;30;0;3.775862068965494;0.15138469476296673;1.0;15;False;calculada
+utilidad_acum;CF5;4;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;CF5;4;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;CF5;4;30;0;46.666666666666686;7.35295806145377e-11;1.1029437092180654e-09;15;True;calculada
+t_ajuste_ms;CF5;6;30;0;3.8793103448275863;0.14375351140845083;1.0;15;False;calculada
+t_estab_ms;CF5;6;30;0;1.9663865546218373;0.3741145379271062;1.0;15;False;calculada
+utilidad_acum;CF5;6;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;CF5;6;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;CF5;6;30;0;42.19999999999999;6.86098439969349e-10;1.0291476599540236e-08;15;True;calculada
+t_ajuste_ms;MIXTO;2;30;0;6.3050847457627;0.04274331915528108;0.6411497873292162;15;False;calculada
+t_estab_ms;MIXTO;2;30;0;1.9639639639639597;0.37456797568746425;1.0;15;False;calculada
+utilidad_acum;MIXTO;2;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;MIXTO;2;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;MIXTO;2;30;0;46.06666666666666;9.925455200990444e-11;1.4888182801485666e-09;15;True;calculada
+t_ajuste_ms;MIXTO;4;30;0;0.8666666666666742;0.6483443410015073;1.0;15;False;calculada
+t_estab_ms;MIXTO;4;30;0;0.4745762711864137;0.788763984293521;1.0;15;False;calculada
+utilidad_acum;MIXTO;4;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+perdida_acum;MIXTO;4;30;0;0.0;1.0;1.0;15;False;tres estrategias idénticas en todos los bloques
+t_plan_ms;MIXTO;4;30;0;46.739495798319346;7.090019733133774e-11;1.063502959970066e-09;15;True;calculada
+t_ajuste_ms;MIXTO;6;30;0;16.42735042735041;0.0002709231887315512;0.004063847830973267;15;True;calculada
+t_estab_ms;MIXTO;6;29;1;19.51724137931035;5.779428343676817e-05;0.0008669142515515225;15;True;calculada
+utilidad_acum;MIXTO;6;30;0;11.466666666666697;0.0032362716621228073;0.04854407493184211;15;True;calculada
+perdida_acum;MIXTO;6;30;0;11.466666666666697;0.0032362716621228073;0.04854407493184211;15;True;calculada
+t_plan_ms;MIXTO;6;30;0;46.06666666666666;9.925455200990444e-11;1.4888182801485666e-09;15;True;calculada
+t_ajuste_ms;MIXTO;8;30;0;16.62711864406782;0.0002451698500678872;0.0036775477510183085;15;True;calculada
+t_estab_ms;MIXTO;8;30;0;12.258620689655196;0.0021780825687691984;0.03267123853153798;15;True;calculada
+utilidad_acum;MIXTO;8;30;0;8.33333333333343;0.015503853599008568;0.23255780398512851;15;False;calculada
+perdida_acum;MIXTO;8;30;0;8.33333333333343;0.015503853599008568;0.23255780398512851;15;False;calculada
+t_plan_ms;MIXTO;8;30;0;42.06666666666666;7.333974528754126e-10;1.1000961793131188e-08;15;True;calculada
